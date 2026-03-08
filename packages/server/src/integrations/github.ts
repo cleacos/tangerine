@@ -5,7 +5,18 @@
 import { Effect } from "effect"
 import { createLogger } from "../logger"
 import { GitHubPollError } from "../errors"
-import type { ProjectConfig } from "../types"
+/** Config shape needed by GitHub polling */
+interface ProjectConfig {
+  repo: string
+  integrations?: {
+    github?: {
+      trigger: {
+        type: "label" | "assignee"
+        value: string
+      }
+    }
+  }
+}
 
 const log = createLogger("github")
 

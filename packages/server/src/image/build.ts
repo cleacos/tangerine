@@ -18,7 +18,7 @@ import { createImage } from "../db/queries.ts";
 const TEMPLATE_PATH = resolve(import.meta.dir, "tangerine.yaml");
 const IMAGES_DIR = resolve(import.meta.dir, "../../../../images");
 
-async function buildImage(imageName: string): Promise<void> {
+export async function buildImage(imageName: string): Promise<void> {
   const label = `tangerine-build-${imageName}-${Date.now()}`;
   const provider = new LimaProvider({ templatePath: TEMPLATE_PATH });
   const db = getDb();

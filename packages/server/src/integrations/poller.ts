@@ -22,6 +22,7 @@ export class Poller {
       self.fiber = yield* self.pollFn.pipe(
         Effect.repeat(Schedule.spaced(`${self.intervalMs} millis`)),
         Effect.catchAll(() => Effect.void),
+        Effect.asVoid,
         Effect.fork,
       )
     })

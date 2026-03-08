@@ -4,7 +4,6 @@
 import { Effect } from "effect"
 import { createLogger } from "../logger"
 import {
-  DbError,
   TaskNotFoundError,
   SessionCleanupError,
   AgentError,
@@ -21,10 +20,10 @@ const log = createLogger("tasks")
 export type TaskSource = "github" | "manual" | "api"
 
 export interface TaskManagerDeps {
-  insertTask(task: Pick<TaskRow, "id" | "source" | "repo_url" | "title"> & Partial<Pick<TaskRow, "source_id" | "source_url" | "description" | "user_id" | "branch">>): Effect.Effect<TaskRow, DbError>
-  updateTask(taskId: string, updates: Partial<Omit<TaskRow, "id">>): Effect.Effect<TaskRow | null, DbError>
-  getTask(taskId: string): Effect.Effect<TaskRow | null, DbError>
-  listTasks(filter?: { status?: string }): Effect.Effect<TaskRow[], DbError>
+  insertTask(task: Pick<TaskRow, "id" | "source" | "repo_url" | "title"> & Partial<Pick<TaskRow, "source_id" | "source_url" | "description" | "user_id" | "branch">>): Effect.Effect<TaskRow, Error>
+  updateTask(taskId: string, updates: Partial<Omit<TaskRow, "id">>): Effect.Effect<TaskRow | null, Error>
+  getTask(taskId: string): Effect.Effect<TaskRow | null, Error>
+  listTasks(filter?: { status?: string }): Effect.Effect<TaskRow[], Error>
   lifecycleDeps: LifecycleDeps
   cleanupDeps: CleanupDeps
   retryDeps: RetryDeps
@@ -45,7 +44,7 @@ export function createTask(
     title: string
     description?: string
   },
-): Effect.Effect<TaskRow, DbError> {
+): Effect.Effect<TaskRow, Error> {
   return Effect.gen(function* () {
     const id = crypto.randomUUID()
 

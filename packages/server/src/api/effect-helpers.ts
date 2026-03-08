@@ -4,6 +4,7 @@
 
 import { Effect, Exit, Cause, Option } from "effect"
 import type { Context as HonoContext } from "hono"
+import type { ContentfulStatusCode } from "hono/utils/http-status"
 
 const DEFAULT_ERROR_MAP: Record<string, number> = {
   TaskNotFoundError: 404,
@@ -17,7 +18,7 @@ const DEFAULT_ERROR_MAP: Record<string, number> = {
  * Runs an Effect and returns a JSON response, mapping tagged errors to HTTP status codes.
  * Use for GET routes and POST routes that return data.
  */
-export function runEffect<A, E extends { _tag: string; message?: string }>(
+export function runEffect<A, E>(
   c: HonoContext,
   effect: Effect.Effect<A, E>,
   options?: {
@@ -29,18 +30,20 @@ export function runEffect<A, E extends { _tag: string; message?: string }>(
 
   return Effect.runPromiseExit(effect).then((exit) => {
     if (Exit.isSuccess(exit)) {
-      return c.json(exit.value as object, options?.status ?? 200)
+      return c.json(exit.value as object, (options?.status ?? 200) as ContentfulStatusCode)
     }
 
     const failure = Cause.failureOption(exit.cause)
     if (Option.isSome(failure)) {
-      const error = failure.value
-      const status = errorMap[error._tag] ?? 500
-      return c.json({ error: error.message ?? error._tag }, status)
+      const error = failure.value as Record<string, unknown>
+      const tag = typeof error._tag === "string" ? error._tag : undefined
+      const message = typeof error.message === "string" ? error.message : (tag ?? "Unknown error")
+      const status = (tag ? (errorMap[tag] ?? 500) : 500) as ContentfulStatusCode
+      return c.json({ error: message }, status)
     }
 
     // Defect (unexpected throw or die) — don't leak internals
-    return c.json({ error: "Internal server error" }, 500)
+    return c.json({ error: "Internal server error" }, 500 as ContentfulStatusCode)
   })
 }
 
@@ -48,7 +51,7 @@ export function runEffect<A, E extends { _tag: string; message?: string }>(
  * Runs a void Effect and returns { ok: true } on success.
  * Use for POST action routes (cancel, abort, etc.) that don't return data.
  */
-export function runEffectVoid<E extends { _tag: string; message?: string }>(
+export function runEffectVoid<E>(
   c: HonoContext,
   effect: Effect.Effect<void, E>,
   options?: {

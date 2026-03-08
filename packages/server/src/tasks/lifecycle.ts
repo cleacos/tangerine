@@ -18,14 +18,14 @@ export interface SessionInfo {
 }
 
 export interface LifecycleDeps {
-  acquireVm(taskId: string): Effect.Effect<VmRow, import("../errors").PoolExhaustedError | import("../errors").ProviderError | import("../errors").DbError>
+  acquireVm(taskId: string): Effect.Effect<VmRow, import("../errors").PoolExhaustedError | import("../errors").ProviderError | Error>
   sshExec(host: string, port: number, command: string): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }, import("../errors").SshError>
   waitForSsh(host: string, port: number): Effect.Effect<void, import("../errors").SshTimeoutError>
   injectCredentials(host: string, port: number, credentials: Record<string, string>): Effect.Effect<void, import("../errors").SshError>
   createTunnel(vmIp: string, sshPort: number, ports: { opencodeVmPort: number; previewVmPort: number }): Effect.Effect<SessionTunnel, import("../errors").TunnelError>
   createOpencodeSession(opencodePort: number, title: string): Effect.Effect<string, import("../errors").AgentError>
   waitForHealth(opencodePort: number): Effect.Effect<void, import("../errors").HealthCheckError>
-  updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, import("../errors").DbError>
+  updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, Error>
 }
 
 export interface ProjectConfig {

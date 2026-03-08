@@ -31,7 +31,6 @@ export {
 export type { SessionTunnel } from "./tunnel.ts";
 
 export {
-  DbError,
   SshError,
   SshTimeoutError,
   TunnelError,

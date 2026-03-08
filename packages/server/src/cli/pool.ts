@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { loadConfig } from "../config.ts"
 import { getDb } from "../db/index.ts"
 import { createProvider } from "../vm/providers/index.ts"
@@ -47,7 +48,7 @@ function createPool(): { pool: VMPoolManager } {
 
 async function showStatus(): Promise<void> {
   const { pool } = createPool()
-  const stats = pool.getPoolStats()
+  const stats = Effect.runSync(pool.getPoolStats())
 
   console.log()
   console.log("Pool Status")
@@ -57,15 +58,16 @@ async function showStatus(): Promise<void> {
   console.log(`  Total:        ${stats.total}`)
   console.log()
 
-  const vms = pool.listActiveVms()
-  if (vms.length === 0) {
+  const vms = Effect.runSync(pool.listVms())
+  const activeVms = vms.filter((vm) => vm.status !== "destroyed" && vm.status !== "error")
+  if (activeVms.length === 0) {
     console.log("No active VMs")
     return
   }
 
   printTable(
     ["ID", "STATUS", "IP", "TASK", "PROVIDER", "CREATED"],
-    vms.map((vm) => [
+    activeVms.map((vm) => [
       vm.id.slice(0, 12),
       vm.status,
       vm.ip ?? "-",
@@ -80,13 +82,14 @@ async function runReconcile(): Promise<void> {
   const { pool } = createPool()
 
   console.log("Reconciling pool state with provider...")
-  const result = await pool.reconcile()
+  // Reap idle VMs as a simple reconciliation step
+  const destroyed = await Effect.runPromise(pool.reapIdleVms())
+  pool.ensureWarm()
 
   console.log()
-  console.log(`Updated:   ${result.updated}`)
-  console.log(`Destroyed: ${result.destroyed}`)
+  console.log(`Destroyed: ${destroyed}`)
 
-  const stats = pool.getPoolStats()
+  const stats = Effect.runSync(pool.getPoolStats())
   console.log()
   console.log("Pool after reconcile:")
   console.log(`  Ready:        ${stats.ready}`)
@@ -94,5 +97,5 @@ async function runReconcile(): Promise<void> {
   console.log(`  Provisioning: ${stats.provisioning}`)
   console.log(`  Total:        ${stats.total}`)
 
-  log.info("Pool reconciled via CLI", { ...result })
+  log.info("Pool reconciled via CLI", { destroyed })
 }

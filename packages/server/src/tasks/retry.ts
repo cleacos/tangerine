@@ -13,7 +13,7 @@ const log = createLogger("retry")
 const MAX_RETRY_ATTEMPTS = 3
 
 export interface RetryDeps {
-  updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, import("../errors").DbError>
+  updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, Error>
 }
 
 export function startSessionWithRetry(

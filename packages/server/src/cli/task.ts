@@ -47,45 +47,19 @@ async function createTask(argv: string[]): Promise<void> {
   const config = loadConfig()
   const db = getDb()
 
-  try {
-    const { TaskManager } = await import("../tasks/manager.ts")
-    const { VMPoolManager } = await import("../vm/pool.ts")
-    const { createProvider } = await import("../vm/providers/index.ts")
-    const { createPoolConfig } = await import("../vm/pool-config.ts")
+  const { createTask: dbCreateTask } = await import("../db/queries.ts")
+  const repoUrl = repo.startsWith("http") ? repo : `https://github.com/${repo}`
+  const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-    const providerType = process.platform === "darwin" ? "lima" : "incus"
-    const provider = createProvider(providerType as "lima" | "incus")
-    const poolConfig = createPoolConfig(config, provider, providerType)
-    const pool = new VMPoolManager(db, poolConfig)
-    const manager = new TaskManager(db, pool, config)
+  const { Effect } = await import("effect")
+  const task = Effect.runSync(dbCreateTask(db, {
+    id,
+    source: "manual",
+    repo_url: repoUrl,
+    title,
+    description,
+  }))
 
-    // Construct the full repo URL from owner/repo shorthand
-    const repoUrl = repo.startsWith("http") ? repo : `https://github.com/${repo}`
-    const task = await manager.createTask("manual", repoUrl, title, description)
-
-    console.log(`Task created: ${task.id}`)
-    log.info("Task created via CLI", { taskId: task.id, repo, title })
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND" ||
-        (err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") {
-      // Fall back to direct DB insert if TaskManager not available
-      const { createTask: dbCreateTask } = await import("../db/queries.ts")
-      const repoUrl = repo.startsWith("http") ? repo : `https://github.com/${repo}`
-      const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-
-      const { Effect } = await import("effect")
-      const task = Effect.runSync(dbCreateTask(db, {
-        id,
-        source: "manual",
-        repo_url: repoUrl,
-        title,
-        description,
-      }))
-
-      console.log(`Task created: ${task.id}`)
-      log.info("Task created via CLI (direct DB)", { taskId: task.id, repo, title })
-      return
-    }
-    throw err
-  }
+  console.log(`Task created: ${task.id}`)
+  log.info("Task created via CLI", { taskId: task.id, repo, title })
 }

@@ -46,7 +46,7 @@ async function buildImage(argv: string[]): Promise<void> {
 
   try {
     const { buildImage: build } = await import("../image/build.ts")
-    await build(name, config)
+    await build(name)
     log.info("Image built successfully", { name })
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND" ||

@@ -11,8 +11,8 @@ async function main(): Promise<void> {
 
   switch (command) {
     case "start": {
-      const { runStart } = await import("./start.ts")
-      await runStart(args.slice(1))
+      const { start } = await import("./start.ts")
+      await start()
       break
     }
     case "image": {

@@ -20,7 +20,9 @@ export function taskRoutes(deps: AppDeps): Hono {
   app.get("/:id", (c) => {
     return runEffect(c,
       getTask(deps.db, c.req.param("id")).pipe(
-        Effect.map(mapTaskRow)
+        Effect.flatMap((task) =>
+          task ? Effect.succeed(mapTaskRow(task)) : Effect.fail(new Error("Task not found"))
+        )
       )
     )
   })

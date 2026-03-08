@@ -15,11 +15,11 @@ export function previewRoutes(deps: AppDeps): Hono {
       Effect.gen(function* () {
         const task = yield* getTask(deps.db, id)
 
-        if (!task.preview_port) {
+        if (!task || !task.preview_port) {
           return yield* Effect.fail({
             _tag: "AgentError" as const,
             message: "No preview available for this task",
-            taskId: task.id,
+            taskId: id,
           })
         }
 

@@ -10,10 +10,10 @@ const log = createLogger("cleanup")
 
 export interface CleanupDeps {
   getSessionMessages(opencodePort: number, sessionId: string): Effect.Effect<unknown[], import("../errors").AgentError>
-  persistMessages(taskId: string, messages: unknown[]): Effect.Effect<void, import("../errors").DbError>
+  persistMessages(taskId: string, messages: unknown[]): Effect.Effect<void, Error>
   sshExec(host: string, port: number, command: string): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }, import("../errors").SshError>
-  releaseVm(vmId: string): Effect.Effect<void, import("../errors").DbError>
-  getTask(taskId: string): Effect.Effect<TaskRow | null, import("../errors").DbError>
+  releaseVm(vmId: string): Effect.Effect<void, Error>
+  getTask(taskId: string): Effect.Effect<TaskRow | null, Error>
 }
 
 export function cleanupSession(

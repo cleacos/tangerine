@@ -46,7 +46,7 @@ export function acquireVm(
     let vm: PoolVmRow
 
     if (readyVms.length > 0) {
-      vm = readyVms[0]
+      vm = readyVms[0]!
       deps.updateVm(vm.id, {
         status: "assigned",
         taskId,

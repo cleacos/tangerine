@@ -99,7 +99,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }))
-    ) as typeof fetch
+    ) as unknown as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
     await Effect.runPromise(pollGitHubIssues(config, deps))
@@ -121,7 +121,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }))
-    ) as typeof fetch
+    ) as unknown as typeof fetch
 
     const config = makeConfig({ type: "label", value: "agent" })
     await Effect.runPromise(pollGitHubIssues(config, deps))
@@ -142,7 +142,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }))
-    ) as typeof fetch
+    ) as unknown as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
 
@@ -170,7 +170,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }))
-    ) as typeof fetch
+    ) as unknown as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
     await Effect.runPromise(pollGitHubIssues(config, deps))
@@ -188,18 +188,18 @@ describe("tracer: github polling -> task creation -> dedup", () => {
         status: 500,
         statusText: "Internal Server Error",
       }))
-    ) as typeof fetch
+    ) as unknown as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
 
-    // pollGitHubIssues catches errors internally and logs them
-    await expect(Effect.runPromise(pollGitHubIssues(config, deps))).resolves.toBeUndefined()
+    // pollGitHubIssues returns a GitHubPollError for non-OK responses
+    await expect(Effect.runPromise(pollGitHubIssues(config, deps))).rejects.toThrow()
     expect(createdTasks).toHaveLength(0)
   })
 
   it("skips polling when no trigger configured", async () => {
     const fetchMock = mock(() => Promise.resolve(new Response("[]")))
-    globalThis.fetch = fetchMock as typeof fetch
+    globalThis.fetch = fetchMock as unknown as typeof fetch
 
     const config = { repo: "test/repo" } as ProjectConfig
     await Effect.runPromise(pollGitHubIssues(config, deps))
@@ -215,7 +215,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }))
-    ) as typeof fetch
+    ) as unknown as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
     await Effect.runPromise(pollGitHubIssues(config, deps))
@@ -238,7 +238,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }))
-    ) as typeof fetch
+    ) as unknown as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
     await Effect.runPromise(pollGitHubIssues(config, deps))

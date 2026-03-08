@@ -3,7 +3,7 @@ import { Hono } from "hono"
 import { createBunWebSocket } from "hono/bun"
 import type { AppDeps } from "../app"
 import { getTask } from "../../db/queries"
-import type { WsClientMessage, WsServerMessage } from "@tangerine/shared"
+import type { WsClientMessage, WsServerMessage, TaskStatus } from "@tangerine/shared"
 
 export interface WsSetup {
   routes: Hono
@@ -21,7 +21,7 @@ export function wsRoutes(deps: AppDeps): WsSetup {
   app.get(
     "/:id/ws",
     upgradeWebSocket((c) => {
-      const taskId = c.req.param("id")
+      const taskId = c.req.param("id")!
 
       // Store unsubscribe functions so we can clean up on close
       let unsubEvent: (() => void) | null = null
@@ -48,7 +48,7 @@ export function wsRoutes(deps: AppDeps): WsSetup {
 
               // Relay status changes to this client
               unsubStatus = deps.taskManager.onStatusChange(taskId, (status) => {
-                const msg: WsServerMessage = { type: "status", status }
+                const msg: WsServerMessage = { type: "status", status: status as TaskStatus }
                 try {
                   ws.send(JSON.stringify(msg))
                 } catch {

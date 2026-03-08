@@ -11,11 +11,11 @@ const log = createLogger("health")
 const HEALTH_CHECK_INTERVAL_MS = 30_000
 
 export interface HealthCheckDeps {
-  listRunningTasks(): Effect.Effect<TaskRow[], import("../errors").DbError>
+  listRunningTasks(): Effect.Effect<TaskRow[], Error>
   checkOpencodeHealth(opencodePort: number): Effect.Effect<boolean, never>
   checkVmHealth(vmId: string): Effect.Effect<boolean, never>
   restartOpencode(task: TaskRow): Effect.Effect<void, import("../errors").SshError>
-  failTask(taskId: string, reason: string): Effect.Effect<void, import("../errors").DbError>
+  failTask(taskId: string, reason: string): Effect.Effect<void, Error>
 }
 
 export function checkTask(
