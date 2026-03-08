@@ -73,13 +73,14 @@ async function createTask(argv: string[]): Promise<void> {
       const repoUrl = repo.startsWith("http") ? repo : `https://github.com/${repo}`
       const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-      const task = dbCreateTask(db, {
+      const { Effect } = await import("effect")
+      const task = Effect.runSync(dbCreateTask(db, {
         id,
         source: "manual",
         repo_url: repoUrl,
         title,
         description,
-      })
+      }))
 
       console.log(`Task created: ${task.id}`)
       log.info("Task created via CLI (direct DB)", { taskId: task.id, repo, title })

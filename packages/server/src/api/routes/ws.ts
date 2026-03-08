@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { Hono } from "hono"
 import { createBunWebSocket } from "hono/bun"
 import type { AppDeps } from "../app"
@@ -28,37 +29,39 @@ export function wsRoutes(deps: AppDeps): WsSetup {
 
       return {
         onOpen(_event, ws) {
-          const task = getTask(deps.db, taskId)
-          if (!task) {
-            const msg: WsServerMessage = { type: "error", message: "Task not found" }
-            ws.send(JSON.stringify(msg))
-            ws.close(1008, "Task not found")
-            return
-          }
+          // Run Effect-based getTask inside callback via runPromise
+          Effect.runPromise(getTask(deps.db, taskId)).then(
+            (task) => {
+              // Confirm connection
+              const connected: WsServerMessage = { type: "connected" }
+              ws.send(JSON.stringify(connected))
 
-          // Confirm connection
-          const connected: WsServerMessage = { type: "connected" }
-          ws.send(JSON.stringify(connected))
+              // Relay agent events to this client
+              unsubEvent = deps.taskManager.onTaskEvent(taskId, (data: unknown) => {
+                const msg: WsServerMessage = { type: "event", data }
+                try {
+                  ws.send(JSON.stringify(msg))
+                } catch {
+                  // Client disconnected
+                }
+              })
 
-          // Relay agent events to this client
-          unsubEvent = deps.taskManager.onTaskEvent(taskId, (data: unknown) => {
-            const msg: WsServerMessage = { type: "event", data }
-            try {
+              // Relay status changes to this client
+              unsubStatus = deps.taskManager.onStatusChange(taskId, (status) => {
+                const msg: WsServerMessage = { type: "status", status }
+                try {
+                  ws.send(JSON.stringify(msg))
+                } catch {
+                  // Client disconnected
+                }
+              })
+            },
+            () => {
+              const msg: WsServerMessage = { type: "error", message: "Task not found" }
               ws.send(JSON.stringify(msg))
-            } catch {
-              // Client disconnected
+              ws.close(1008, "Task not found")
             }
-          })
-
-          // Relay status changes to this client
-          unsubStatus = deps.taskManager.onStatusChange(taskId, (status) => {
-            const msg: WsServerMessage = { type: "status", status }
-            try {
-              ws.send(JSON.stringify(msg))
-            } catch {
-              // Client disconnected
-            }
-          })
+          )
         },
 
         onMessage(event, ws) {
@@ -73,9 +76,21 @@ export function wsRoutes(deps: AppDeps): WsSetup {
           }
 
           if (parsed.type === "prompt" && parsed.text) {
-            deps.taskManager.sendPrompt(taskId, parsed.text)
+            Effect.runPromise(
+              deps.taskManager.sendPrompt(taskId, parsed.text)
+            ).catch((err: unknown) => {
+              const message = err instanceof Error ? err.message : String(err)
+              const msg: WsServerMessage = { type: "error", message }
+              try {
+                ws.send(JSON.stringify(msg))
+              } catch {
+                // Client disconnected
+              }
+            })
           } else if (parsed.type === "abort") {
-            deps.taskManager.abortTask(taskId).catch((err: unknown) => {
+            Effect.runPromise(
+              deps.taskManager.abortTask(taskId)
+            ).catch((err: unknown) => {
               const message = err instanceof Error ? err.message : String(err)
               const msg: WsServerMessage = { type: "error", message }
               try {

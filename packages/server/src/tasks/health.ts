@@ -1,63 +1,122 @@
 // Health checker: periodically verifies running tasks are alive.
 // Logs each check so recovery actions are traceable.
 
+import { Effect, Schedule } from "effect"
 import { createLogger } from "../logger"
-import type { Task } from "../types"
+import { HealthCheckError } from "../errors"
+import type { TaskRow } from "../db/types"
 
 const log = createLogger("health")
 
+const HEALTH_CHECK_INTERVAL_MS = 30_000
+
 export interface HealthCheckDeps {
-  listRunningTasks(): Task[]
-  checkOpencodeHealth(opencodePort: number): Promise<boolean>
-  checkVmHealth(vmId: string): Promise<boolean>
-  restartOpencode(task: Task): Promise<void>
-  failTask(taskId: string, reason: string): void
+  listRunningTasks(): Effect.Effect<TaskRow[], import("../errors").DbError>
+  checkOpencodeHealth(opencodePort: number): Effect.Effect<boolean, never>
+  checkVmHealth(vmId: string): Effect.Effect<boolean, never>
+  restartOpencode(task: TaskRow): Effect.Effect<void, import("../errors").SshError>
+  failTask(taskId: string, reason: string): Effect.Effect<void, import("../errors").DbError>
 }
 
-export async function runHealthChecks(deps: HealthCheckDeps): Promise<void> {
-  const tasks = deps.listRunningTasks()
-  log.debug("Health check started", { runningTaskCount: tasks.length })
+export function checkTask(
+  task: TaskRow,
+  deps: HealthCheckDeps,
+): Effect.Effect<"healthy" | "recovered" | "failed", HealthCheckError> {
+  return Effect.gen(function* () {
+    const taskLog = log.child({ taskId: task.id, vmId: task.vm_id })
 
-  for (const task of tasks) {
-    const taskLog = log.child({ taskId: task.id, vmId: task.vmId })
-
-    try {
-      // Check VM is still reachable
-      if (task.vmId) {
-        const vmAlive = await deps.checkVmHealth(task.vmId)
-        if (!vmAlive) {
-          taskLog.warn("Task unhealthy, recovering", { reason: "vm-unreachable" })
-          taskLog.error("Recovery failed, marking task failed", {
-            reason: "VM is unreachable, cannot recover",
-          })
-          deps.failTask(task.id, "VM became unreachable")
-          continue
-        }
+    // Check VM is still reachable
+    if (task.vm_id) {
+      const vmAlive = yield* deps.checkVmHealth(task.vm_id)
+      if (!vmAlive) {
+        taskLog.warn("Task unhealthy, recovering", { reason: "vm-unreachable" })
+        taskLog.error("Recovery failed, marking task failed", {
+          reason: "VM is unreachable, cannot recover",
+        })
+        yield* deps.failTask(task.id, "VM became unreachable").pipe(Effect.ignoreLogged)
+        return yield* new HealthCheckError({
+          message: "VM became unreachable",
+          taskId: task.id,
+          reason: "vm_dead",
+        })
       }
-
-      // Check OpenCode server is responding
-      if (task.opencodePort) {
-        const healthy = await deps.checkOpencodeHealth(task.opencodePort)
-        if (!healthy) {
-          taskLog.warn("Task unhealthy, recovering", { reason: "opencode-unresponsive" })
-          try {
-            await deps.restartOpencode(task)
-            taskLog.info("Recovery succeeded", { action: "opencode-restart" })
-          } catch (err) {
-            taskLog.error("Recovery failed, marking task failed", {
-              reason: err instanceof Error ? err.message : String(err),
-            })
-            deps.failTask(task.id, "OpenCode server unresponsive and restart failed")
-            continue
-          }
-        }
-      }
-
-      taskLog.debug("Task healthy")
-    } catch (err) {
-      taskLog.error("Health check error", {
-        error: err instanceof Error ? err.message : String(err),
-      })
     }
-  }
+
+    // Check OpenCode server is responding
+    if (task.opencode_port) {
+      const healthy = yield* deps.checkOpencodeHealth(task.opencode_port)
+      if (!healthy) {
+        taskLog.warn("Task unhealthy, recovering", { reason: "opencode-unresponsive" })
+
+        const restartResult = yield* deps.restartOpencode(task).pipe(
+          Effect.map(() => "recovered" as const),
+          Effect.catchAll((err) => {
+            taskLog.error("Recovery failed, marking task failed", {
+              reason: err.message,
+            })
+            return Effect.gen(function* () {
+              yield* deps.failTask(task.id, "OpenCode server unresponsive and restart failed").pipe(
+                Effect.ignoreLogged
+              )
+              return "failed" as const
+            })
+          })
+        )
+
+        if (restartResult === "recovered") {
+          taskLog.info("Recovery succeeded", { action: "opencode-restart" })
+          return "recovered"
+        }
+
+        return yield* new HealthCheckError({
+          message: "OpenCode server unresponsive and restart failed",
+          taskId: task.id,
+          reason: "opencode_dead",
+        })
+      }
+    }
+
+    taskLog.debug("Task healthy")
+    return "healthy"
+  })
+}
+
+export function checkAllTasks(
+  deps: HealthCheckDeps,
+): Effect.Effect<void, never> {
+  return Effect.gen(function* () {
+    const tasks = yield* deps.listRunningTasks().pipe(
+      Effect.catchAll(() => Effect.succeed([] as TaskRow[]))
+    )
+    log.debug("Health check started", { runningTaskCount: tasks.length })
+
+    for (const task of tasks) {
+      yield* checkTask(task, deps).pipe(
+        Effect.catchAll((error) => {
+          log.error("Health check error", {
+            taskId: task.id,
+            error: error.message,
+          })
+          return Effect.void
+        })
+      )
+    }
+  })
+}
+
+/**
+ * Starts a repeating health check loop as a background fiber.
+ * Errors are caught internally so the monitor never crashes.
+ */
+export function startHealthMonitor(
+  deps: HealthCheckDeps,
+): Effect.Effect<void, never> {
+  return checkAllTasks(deps).pipe(
+    Effect.repeat(Schedule.fixed(`${HEALTH_CHECK_INTERVAL_MS} millis`)),
+    Effect.catchAll(() => Effect.void),
+    Effect.asVoid,
+    // Run in background fiber so caller isn't blocked
+    Effect.fork,
+    Effect.asVoid,
+  )
 }

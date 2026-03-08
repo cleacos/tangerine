@@ -18,12 +18,9 @@ export {
   sshExec,
   sshExecStreaming,
   waitForSsh,
-  buildSshArgs,
 } from "./ssh.ts";
 export type {
-  SshExecOptions,
   SshExecResult,
-  SshExecStreamingOptions,
 } from "./ssh.ts";
 
 export {
@@ -32,3 +29,13 @@ export {
   allocatePort,
 } from "./tunnel.ts";
 export type { SessionTunnel } from "./tunnel.ts";
+
+export {
+  DbError,
+  SshError,
+  SshTimeoutError,
+  TunnelError,
+  ProviderError,
+  VmNotFoundError,
+  TaskNotFoundError,
+} from "../errors";

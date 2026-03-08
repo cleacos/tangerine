@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { DEFAULT_API_PORT } from "@tangerine/shared"
 import { loadConfig } from "./config"
 import { getDb } from "./db/index"
@@ -5,28 +6,39 @@ import { VMPoolManager } from "./vm/pool"
 import { TaskManager } from "./tasks/manager"
 import { createApp } from "./api/app"
 import { createGitHubPoller } from "./integrations/github"
+import { createLogger } from "./logger"
 
-const config = loadConfig()
-const db = getDb()
+const log = createLogger("main")
 
-// VM pool with empty slots for now — providers are configured per-project
-const pool = new VMPoolManager(db, { slots: [] })
+// Startup wrapped in Effect to establish the pattern for future async init steps
+const program = Effect.sync(() => {
+  const config = loadConfig()
+  const db = getDb()
 
-const taskManager = new TaskManager(db, pool, config)
+  // VM pool with empty slots for now — providers are configured per-project
+  const pool = new VMPoolManager(db, { slots: [] })
 
-const { app, websocket } = createApp({ db, taskManager, pool, config })
+  const taskManager = new TaskManager(db, pool, config)
 
-// Start GitHub poller if configured
-const ghPoller = createGitHubPoller(db, taskManager, config)
-if (ghPoller) {
-  ghPoller.start()
-  console.log("GitHub issue poller started")
-}
+  const { app, websocket } = createApp({ db, taskManager, pool, config })
 
-const server = Bun.serve({
-  port: DEFAULT_API_PORT,
-  fetch: app.fetch,
-  websocket,
+  // Start GitHub poller if configured
+  const ghPoller = createGitHubPoller(db, taskManager, config)
+  if (ghPoller) {
+    ghPoller.start()
+    log.info("GitHub issue poller started")
+  }
+
+  const server = Bun.serve({
+    port: DEFAULT_API_PORT,
+    fetch: app.fetch,
+    websocket,
+  })
+
+  log.info("Server started", { port: server.port, project: config.config.project.name })
 })
 
-console.log(`Tangerine API server running on http://localhost:${server.port}`)
+Effect.runPromise(program).catch((err) => {
+  log.error("Startup failed", { error: err instanceof Error ? err.message : String(err) })
+  process.exit(1)
+})

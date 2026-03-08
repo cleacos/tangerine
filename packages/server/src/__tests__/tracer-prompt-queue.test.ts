@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test"
+import { Effect } from "effect"
 import {
   enqueue,
   setAgentState,
@@ -28,110 +29,110 @@ describe("tracer: prompt queue -> agent state -> delivery", () => {
   it("enqueues a prompt and drains when agent is idle", async () => {
     const t = tid()
 
-    enqueue(t, "Hello agent")
+    Effect.runSync(enqueue(t, "Hello agent"))
 
     // Agent is idle by default, drain should send
-    const sent = await drainNext(t, sendPrompt)
+    const sent = await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sent).toBe(true)
     expect(sentPrompts).toHaveLength(1)
     expect(sentPrompts[0]!.text).toBe("Hello agent")
     expect(sentPrompts[0]!.taskId).toBe(t)
 
-    clearQueue(t)
+    Effect.runSync(clearQueue(t))
   })
 
   it("does not drain when agent is busy", async () => {
     const t = tid()
 
-    enqueue(t, "Queued message")
-    setAgentState(t, "busy")
+    Effect.runSync(enqueue(t, "Queued message"))
+    Effect.runSync(setAgentState(t, "busy"))
 
-    const sent = await drainNext(t, sendPrompt)
+    const sent = await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sent).toBe(false)
     expect(sentPrompts).toHaveLength(0)
 
-    clearQueue(t)
+    Effect.runSync(clearQueue(t))
   })
 
   it("drains queued prompt when agent transitions to idle", async () => {
     const t = tid()
 
     // Agent is busy, queue a prompt
-    setAgentState(t, "busy")
-    enqueue(t, "Queued message")
+    Effect.runSync(setAgentState(t, "busy"))
+    Effect.runSync(enqueue(t, "Queued message"))
 
     // Nothing should drain while busy
-    let sent = await drainNext(t, sendPrompt)
+    let sent = await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sent).toBe(false)
 
     // Agent goes idle
-    setAgentState(t, "idle")
-    sent = await drainNext(t, sendPrompt)
+    Effect.runSync(setAgentState(t, "idle"))
+    sent = await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sent).toBe(true)
     expect(sentPrompts).toHaveLength(1)
     expect(sentPrompts[0]!.text).toBe("Queued message")
 
-    clearQueue(t)
+    Effect.runSync(clearQueue(t))
   })
 
   it("delivers multiple prompts in FIFO order", async () => {
     const t = tid()
 
-    enqueue(t, "First")
-    enqueue(t, "Second")
-    enqueue(t, "Third")
+    Effect.runSync(enqueue(t, "First"))
+    Effect.runSync(enqueue(t, "Second"))
+    Effect.runSync(enqueue(t, "Third"))
 
     // Drain first
-    await drainNext(t, sendPrompt)
+    await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sentPrompts).toHaveLength(1)
     expect(sentPrompts[0]!.text).toBe("First")
 
     // After sending, agent is marked busy by drainNext.
     // Simulate agent finishing and going idle.
-    setAgentState(t, "idle")
+    Effect.runSync(setAgentState(t, "idle"))
 
     // Drain second
-    await drainNext(t, sendPrompt)
+    await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sentPrompts).toHaveLength(2)
     expect(sentPrompts[1]!.text).toBe("Second")
 
-    setAgentState(t, "idle")
+    Effect.runSync(setAgentState(t, "idle"))
 
     // Drain third
-    await drainNext(t, sendPrompt)
+    await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sentPrompts).toHaveLength(3)
     expect(sentPrompts[2]!.text).toBe("Third")
 
     // Queue should be empty now
-    setAgentState(t, "idle")
-    const emptySend = await drainNext(t, sendPrompt)
+    Effect.runSync(setAgentState(t, "idle"))
+    const emptySend = await Effect.runPromise(drainNext(t, sendPrompt))
     expect(emptySend).toBe(false)
 
-    clearQueue(t)
+    Effect.runSync(clearQueue(t))
   })
 
   it("clearQueue removes all pending prompts", () => {
     const t = tid()
 
-    setAgentState(t, "busy")
-    enqueue(t, "A")
-    enqueue(t, "B")
-    enqueue(t, "C")
+    Effect.runSync(setAgentState(t, "busy"))
+    Effect.runSync(enqueue(t, "A"))
+    Effect.runSync(enqueue(t, "B"))
+    Effect.runSync(enqueue(t, "C"))
 
-    clearQueue(t)
+    Effect.runSync(clearQueue(t))
 
     // After clearing, nothing should drain
-    setAgentState(t, "idle")
+    Effect.runSync(setAgentState(t, "idle"))
     // drainNext needs to be called, but queue is cleared
   })
 
   it("clearQueue followed by drain returns false", async () => {
     const t = tid()
 
-    enqueue(t, "Will be cleared")
-    clearQueue(t)
+    Effect.runSync(enqueue(t, "Will be cleared"))
+    Effect.runSync(clearQueue(t))
 
-    const sent = await drainNext(t, sendPrompt)
+    const sent = await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sent).toBe(false)
     expect(sentPrompts).toHaveLength(0)
   })
@@ -142,67 +143,67 @@ describe("tracer: prompt queue -> agent state -> delivery", () => {
       throw new Error("Send failed")
     }
 
-    enqueue(t, "Will fail")
+    Effect.runSync(enqueue(t, "Will fail"))
 
     // drainNext should throw when send fails
-    await expect(drainNext(t, failingSend)).rejects.toThrow("Send failed")
+    await expect(Effect.runPromise(drainNext(t, failingSend))).rejects.toThrow("Send failed")
 
     // The prompt should be re-queued (put back at front)
     // Agent should be back to idle
-    const retrySent = await drainNext(t, sendPrompt)
+    const retrySent = await Effect.runPromise(drainNext(t, sendPrompt))
     expect(retrySent).toBe(true)
     expect(sentPrompts).toHaveLength(1)
     expect(sentPrompts[0]!.text).toBe("Will fail")
 
-    clearQueue(t)
+    Effect.runSync(clearQueue(t))
   })
 
   it("drainNext sets agent state to busy", async () => {
     const t = tid()
 
-    enqueue(t, "Test")
+    Effect.runSync(enqueue(t, "Test"))
 
     // First drain succeeds and sets state to busy
-    await drainNext(t, sendPrompt)
+    await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sentPrompts).toHaveLength(1)
 
     // Enqueue another, try to drain without setting idle
-    enqueue(t, "Second")
-    const sent = await drainNext(t, sendPrompt)
+    Effect.runSync(enqueue(t, "Second"))
+    const sent = await Effect.runPromise(drainNext(t, sendPrompt))
     // Should not drain because state is busy after first drain
     expect(sent).toBe(false)
 
-    clearQueue(t)
+    Effect.runSync(clearQueue(t))
   })
 
   it("separate tasks have independent queues", async () => {
     const t1 = tid()
     const t2 = tid()
 
-    enqueue(t1, "For task 1")
-    enqueue(t2, "For task 2")
+    Effect.runSync(enqueue(t1, "For task 1"))
+    Effect.runSync(enqueue(t2, "For task 2"))
 
-    setAgentState(t1, "busy")
+    Effect.runSync(setAgentState(t1, "busy"))
 
     // Only t2 should drain (t1 is busy)
-    const sent1 = await drainNext(t1, sendPrompt)
+    const sent1 = await Effect.runPromise(drainNext(t1, sendPrompt))
     expect(sent1).toBe(false)
 
-    const sent2 = await drainNext(t2, sendPrompt)
+    const sent2 = await Effect.runPromise(drainNext(t2, sendPrompt))
     expect(sent2).toBe(true)
 
     expect(sentPrompts).toHaveLength(1)
     expect(sentPrompts[0]!.taskId).toBe(t2)
     expect(sentPrompts[0]!.text).toBe("For task 2")
 
-    clearQueue(t1)
-    clearQueue(t2)
+    Effect.runSync(clearQueue(t1))
+    Effect.runSync(clearQueue(t2))
   })
 
   it("drains nothing from empty queue", async () => {
     const t = tid()
 
-    const sent = await drainNext(t, sendPrompt)
+    const sent = await Effect.runPromise(drainNext(t, sendPrompt))
     expect(sent).toBe(false)
     expect(sentPrompts).toHaveLength(0)
   })

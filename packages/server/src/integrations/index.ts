@@ -1,2 +1,3 @@
 export { Poller } from "./poller"
-export { createGitHubPoller } from "./github"
+export { pollGitHubIssues, verifyWebhookSignature } from "./github"
+export type { GitHubDeps } from "./github"

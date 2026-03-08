@@ -1,3 +1,21 @@
-export { TaskManager } from "./manager.ts";
-export { startSession, type SessionInfo } from "./lifecycle.ts";
-export { cleanupSession } from "./cleanup.ts";
+export {
+  createTask,
+  cancelTask,
+  completeTask,
+  queuePrompt,
+  dequeuePrompt,
+  abortAgent,
+} from "./manager"
+export type { TaskManagerDeps, TaskSource } from "./manager"
+
+export { startSession } from "./lifecycle"
+export type { SessionInfo, LifecycleDeps, ProjectConfig } from "./lifecycle"
+
+export { cleanupSession } from "./cleanup"
+export type { CleanupDeps } from "./cleanup"
+
+export { startSessionWithRetry } from "./retry"
+export type { RetryDeps } from "./retry"
+
+export { checkTask, checkAllTasks, startHealthMonitor } from "./health"
+export type { HealthCheckDeps } from "./health"

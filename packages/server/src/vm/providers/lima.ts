@@ -1,9 +1,11 @@
+import { Effect } from "effect";
 import type {
   Provider,
   Instance,
   Snapshot,
   CreateInstanceOptions,
 } from "./types.ts";
+import { ProviderError } from "../../errors";
 
 interface LimaConfig {
   templatePath: string;
@@ -32,265 +34,358 @@ export class LimaProvider implements Provider {
     this.templatePath = config.templatePath;
   }
 
-  private async exec(
+  private exec(
     args: string[],
     timeoutMs = 60_000
-  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-    const proc = Bun.spawn(["limactl", ...args], {
-      stdout: "pipe",
-      stderr: "pipe",
+  ): Effect.Effect<{ exitCode: number; stdout: string; stderr: string }, ProviderError> {
+    return Effect.tryPromise({
+      try: async () => {
+        const proc = Bun.spawn(["limactl", ...args], {
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+
+        let timedOut = false;
+        const timer = setTimeout(() => {
+          timedOut = true;
+          proc.kill();
+        }, timeoutMs);
+
+        const [stdout, stderr] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+        ]);
+
+        const exitCode = await proc.exited;
+        clearTimeout(timer);
+
+        if (timedOut) {
+          throw new Error(`limactl ${args[0]} timed out after ${timeoutMs}ms`);
+        }
+
+        return { exitCode, stdout, stderr };
+      },
+      catch: (e) => new ProviderError({
+        message: `limactl ${args[0]} failed: ${e}`,
+        provider: "lima",
+        operation: args[0] ?? "unknown",
+        cause: e,
+      }),
     });
-
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill();
-    }, timeoutMs);
-
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-
-    const exitCode = await proc.exited;
-    clearTimeout(timer);
-
-    if (timedOut) {
-      throw new Error(`limactl ${args[0]} timed out after ${timeoutMs}ms`);
-    }
-
-    return { exitCode, stdout, stderr };
   }
 
-  private async execOrThrow(args: string[], timeoutMs?: number): Promise<string> {
-    const result = await this.exec(args, timeoutMs);
-    if (result.exitCode !== 0) {
-      throw new Error(`limactl ${args[0]} failed (exit ${result.exitCode}): ${result.stderr}`);
-    }
-    return result.stdout;
+  private execOrThrow(args: string[], timeoutMs?: number): Effect.Effect<string, ProviderError> {
+    return Effect.gen(this, function* () {
+      const result = yield* this.exec(args, timeoutMs);
+      if (result.exitCode !== 0) {
+        return yield* Effect.fail(new ProviderError({
+          message: `limactl ${args[0]} failed (exit ${result.exitCode}): ${result.stderr}`,
+          provider: "lima",
+          operation: args[0] ?? "unknown",
+        }));
+      }
+      return result.stdout;
+    });
   }
 
   /** Run limactl with inherited stdio (output goes straight to terminal) */
-  private async execInherit(args: string[], timeoutMs = 60_000): Promise<void> {
-    const proc = Bun.spawn(["limactl", ...args], {
-      stdin: "ignore",
-      stdout: "inherit",
-      stderr: "inherit",
+  private execInherit(args: string[], timeoutMs = 60_000): Effect.Effect<void, ProviderError> {
+    return Effect.tryPromise({
+      try: async () => {
+        const proc = Bun.spawn(["limactl", ...args], {
+          stdin: "ignore",
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+
+        let timedOut = false;
+        const timer = setTimeout(() => {
+          timedOut = true;
+          proc.kill();
+        }, timeoutMs);
+
+        const exitCode = await proc.exited;
+        clearTimeout(timer);
+
+        if (timedOut) {
+          throw new Error(`limactl ${args[0]} timed out after ${timeoutMs}ms`);
+        }
+        if (exitCode !== 0) {
+          throw new Error(`limactl ${args[0]} failed (exit ${exitCode})`);
+        }
+      },
+      catch: (e) => new ProviderError({
+        message: `limactl ${args[0]} failed: ${e}`,
+        provider: "lima",
+        operation: args[0] ?? "unknown",
+        cause: e,
+      }),
     });
-
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill();
-    }, timeoutMs);
-
-    const exitCode = await proc.exited;
-    clearTimeout(timer);
-
-    if (timedOut) {
-      throw new Error(`limactl ${args[0]} timed out after ${timeoutMs}ms`);
-    }
-    if (exitCode !== 0) {
-      throw new Error(`limactl ${args[0]} failed (exit ${exitCode})`);
-    }
   }
 
-  private async getLimaInstance(name: string): Promise<LimaInstance | null> {
-    const result = await this.exec(["list", name, "--json"]);
-    if (result.exitCode !== 0) return null;
+  private getLimaInstance(name: string): Effect.Effect<LimaInstance | null, ProviderError> {
+    return Effect.gen(this, function* () {
+      const result = yield* this.exec(["list", name, "--json"]);
+      if (result.exitCode !== 0) return null;
 
-    // limactl list --json outputs one JSON object per line (JSONL)
-    for (const line of result.stdout.trim().split("\n")) {
-      if (!line) continue;
-      try {
-        const inst = JSON.parse(line) as LimaInstance;
-        if (inst.name === name) return inst;
-      } catch {
-        continue;
+      // limactl list --json outputs one JSON object per line (JSONL)
+      for (const line of result.stdout.trim().split("\n")) {
+        if (!line) continue;
+        try {
+          const inst = JSON.parse(line) as LimaInstance;
+          if (inst.name === name) return inst;
+        } catch {
+          continue;
+        }
       }
-    }
-    return null;
+      return null;
+    });
   }
 
-  private async parseSshPort(sshConfigFile: string): Promise<number> {
-    try {
-      const content = await Bun.file(sshConfigFile).text();
-      const match = content.match(/^\s*Port\s+(\d+)/m);
-      if (match?.[1]) return parseInt(match[1], 10);
-    } catch {
-      // Config doesn't exist yet (VM still starting)
-    }
-    return 22;
+  private parseSshPort(sshConfigFile: string): Effect.Effect<number, ProviderError> {
+    return Effect.tryPromise({
+      try: async () => {
+        try {
+          const content = await Bun.file(sshConfigFile).text();
+          const match = content.match(/^\s*Port\s+(\d+)/m);
+          if (match?.[1]) return parseInt(match[1], 10);
+        } catch {
+          // Config doesn't exist yet (VM still starting)
+        }
+        return 22;
+      },
+      catch: (e) => new ProviderError({
+        message: `Failed to parse SSH port: ${e}`,
+        provider: "lima",
+        operation: "parseSshPort",
+        cause: e,
+      }),
+    });
   }
 
-  private async mapInstance(raw: LimaInstance): Promise<Instance> {
-    const sshPort = await this.parseSshPort(raw.sshConfigFile);
-    return {
-      id: raw.name,
-      label: raw.name,
-      ip: raw.sshAddress || "127.0.0.1",
-      status: mapLimaStatus(raw.status),
-      region: "local",
-      plan: `${raw.cpus}cpu-${Math.round(raw.memory / (1024 * 1024 * 1024))}gb`,
-      createdAt: new Date().toISOString(),
-      sshPort,
-    };
+  private mapInstance(raw: LimaInstance): Effect.Effect<Instance, ProviderError> {
+    return Effect.gen(this, function* () {
+      const sshPort = yield* this.parseSshPort(raw.sshConfigFile);
+      return {
+        id: raw.name,
+        label: raw.name,
+        ip: raw.sshAddress || "127.0.0.1",
+        status: mapLimaStatus(raw.status),
+        region: "local",
+        plan: `${raw.cpus}cpu-${Math.round(raw.memory / (1024 * 1024 * 1024))}gb`,
+        createdAt: new Date().toISOString(),
+        sshPort,
+      };
+    });
   }
 
-  async createInstance(opts: CreateInstanceOptions): Promise<Instance> {
-    const name = opts.label ?? `tangerine-${Date.now()}`;
-    const template = opts.snapshotId || this.templatePath;
-    const verbose = process.env.TANGERINE_VERBOSE === "1";
-    const run = verbose
-      ? (args: string[], timeout: number) => this.execInherit(args, timeout)
-      : (args: string[], timeout: number) => this.execOrThrow(args, timeout);
+  createInstance(opts: CreateInstanceOptions): Effect.Effect<Instance, ProviderError> {
+    return Effect.gen(this, function* () {
+      const name = opts.label ?? `tangerine-${Date.now()}`;
+      const template = opts.snapshotId || this.templatePath;
+      const verbose = process.env.TANGERINE_VERBOSE === "1";
 
-    if (template.startsWith("clone:")) {
-      // Clone-based creation: deep-copy a golden image's disk+config
-      const goldenName = template.slice("clone:".length);
-      await run(["clone", "--tty=false", goldenName, name], 120_000);
-      await run(["start", name, "--tty=false"], 240_000);
-    } else {
-      // Template-based creation: full cloud-init provisioning
-      // First run can take 10+ min (image download + provisioning)
-      await run(
-        ["start", "--name", name, template, "--tty=false"],
-        600_000
-      );
-    }
-
-    const raw = await this.getLimaInstance(name);
-    if (!raw) throw new Error(`Lima instance ${name} created but not found in list`);
-
-    return this.mapInstance(raw);
-  }
-
-  async startInstance(id: string): Promise<void> {
-    await this.execOrThrow(["start", id, "--tty=false"], 120_000);
-  }
-
-  async stopInstance(id: string): Promise<void> {
-    await this.execOrThrow(["stop", id, "--tty=false"], 60_000);
-  }
-
-  async destroyInstance(id: string): Promise<void> {
-    const inst = await this.getLimaInstance(id);
-    if (!inst) return;
-
-    // Force-stop first (immediate kill, no graceful shutdown) — ignore errors if already stopped
-    await this.exec(["stop", "--force", id, "--tty=false"], 30_000);
-    await this.execOrThrow(["delete", "--force", id, "--tty=false"], 30_000);
-  }
-
-  async getInstance(id: string): Promise<Instance> {
-    const raw = await this.getLimaInstance(id);
-    if (!raw) throw new Error(`Lima instance ${id} not found`);
-    return this.mapInstance(raw);
-  }
-
-  async listInstances(label?: string): Promise<Instance[]> {
-    const result = await this.exec(["list", "--json"]);
-    if (result.exitCode !== 0) return [];
-
-    const instances: Instance[] = [];
-    for (const line of result.stdout.trim().split("\n")) {
-      if (!line) continue;
-      try {
-        const raw = JSON.parse(line) as LimaInstance;
-        if (label && !raw.name.includes(label)) continue;
-        if (!label && !raw.name.startsWith("tangerine-")) continue;
-        instances.push(await this.mapInstance(raw));
-      } catch {
-        continue;
+      if (template.startsWith("clone:")) {
+        // Clone-based creation: deep-copy a golden image's disk+config
+        const goldenName = template.slice("clone:".length);
+        if (verbose) {
+          yield* this.execInherit(["clone", "--tty=false", goldenName, name], 120_000);
+          yield* this.execInherit(["start", name, "--tty=false"], 240_000);
+        } else {
+          yield* this.execOrThrow(["clone", "--tty=false", goldenName, name], 120_000);
+          yield* this.execOrThrow(["start", name, "--tty=false"], 240_000);
+        }
+      } else {
+        // Template-based creation: full cloud-init provisioning
+        // First run can take 10+ min (image download + provisioning)
+        if (verbose) {
+          yield* this.execInherit(["start", "--name", name, template, "--tty=false"], 600_000);
+        } else {
+          yield* this.execOrThrow(["start", "--name", name, template, "--tty=false"], 600_000);
+        }
       }
-    }
-    return instances;
+
+      const raw = yield* this.getLimaInstance(name);
+      if (!raw) {
+        return yield* Effect.fail(new ProviderError({
+          message: `Lima instance ${name} created but not found in list`,
+          provider: "lima",
+          operation: "createInstance",
+        }));
+      }
+
+      return yield* this.mapInstance(raw);
+    });
   }
 
-  async waitForReady(id: string, timeoutMs = 300_000): Promise<Instance> {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      const instance = await this.getInstance(id);
-      if (instance.status === "active") {
-        return instance;
+  startInstance(id: string): Effect.Effect<void, ProviderError> {
+    return Effect.gen(this, function* () {
+      yield* this.execOrThrow(["start", id, "--tty=false"], 120_000);
+    });
+  }
+
+  stopInstance(id: string): Effect.Effect<void, ProviderError> {
+    return Effect.gen(this, function* () {
+      yield* this.execOrThrow(["stop", id, "--tty=false"], 60_000);
+    });
+  }
+
+  destroyInstance(id: string): Effect.Effect<void, ProviderError> {
+    return Effect.gen(this, function* () {
+      const inst = yield* this.getLimaInstance(id);
+      if (!inst) return;
+
+      // Force-stop first (immediate kill, no graceful shutdown) — ignore errors if already stopped
+      yield* this.exec(["stop", "--force", id, "--tty=false"], 30_000);
+      yield* this.execOrThrow(["delete", "--force", id, "--tty=false"], 30_000);
+    });
+  }
+
+  getInstance(id: string): Effect.Effect<Instance, ProviderError> {
+    return Effect.gen(this, function* () {
+      const raw = yield* this.getLimaInstance(id);
+      if (!raw) {
+        return yield* Effect.fail(new ProviderError({
+          message: `Lima instance ${id} not found`,
+          provider: "lima",
+          operation: "getInstance",
+        }));
       }
-      if (instance.status === "error") {
-        throw new Error(`Lima instance ${id} entered error state`);
+      return yield* this.mapInstance(raw);
+    });
+  }
+
+  listInstances(label?: string): Effect.Effect<Instance[], ProviderError> {
+    return Effect.gen(this, function* () {
+      const result = yield* this.exec(["list", "--json"]);
+      if (result.exitCode !== 0) return [];
+
+      const instances: Instance[] = [];
+      for (const line of result.stdout.trim().split("\n")) {
+        if (!line) continue;
+        try {
+          const raw = JSON.parse(line) as LimaInstance;
+          if (label && !raw.name.includes(label)) continue;
+          if (!label && !raw.name.startsWith("tangerine-")) continue;
+          instances.push(yield* this.mapInstance(raw));
+        } catch {
+          continue;
+        }
       }
-      const elapsed = Math.round((Date.now() - start) / 1000);
-      console.log(`Lima ${id}: ${instance.status} (${elapsed}s elapsed)`);
-      await sleep(3_000);
-    }
-    throw new Error(`Lima instance ${id} did not become ready within ${timeoutMs / 1000}s`);
+      return instances;
+    });
+  }
+
+  waitForReady(id: string, timeoutMs = 300_000): Effect.Effect<Instance, ProviderError> {
+    return Effect.tryPromise({
+      try: async () => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const instance = await Effect.runPromise(this.getInstance(id));
+          if (instance.status === "active") {
+            return instance;
+          }
+          if (instance.status === "error") {
+            throw new Error(`Lima instance ${id} entered error state`);
+          }
+          const elapsed = Math.round((Date.now() - start) / 1000);
+          console.log(`Lima ${id}: ${instance.status} (${elapsed}s elapsed)`);
+          await sleep(3_000);
+        }
+        throw new Error(`Lima instance ${id} did not become ready within ${timeoutMs / 1000}s`);
+      },
+      catch: (e) => new ProviderError({
+        message: `waitForReady failed: ${e}`,
+        provider: "lima",
+        operation: "waitForReady",
+        cause: e,
+      }),
+    });
   }
 
   // Snapshot support — Lima snapshots are per-instance (save/restore state)
   // Compound ID format: "instance:tag"
 
-  async createSnapshot(instanceId: string, description: string): Promise<Snapshot> {
-    const tag = description.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+  createSnapshot(instanceId: string, description: string): Effect.Effect<Snapshot, ProviderError> {
+    return Effect.gen(this, function* () {
+      const tag = description.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
 
-    // Instance must be stopped to snapshot
-    await this.exec(["stop", instanceId, "--tty=false"]);
-    await this.execOrThrow(["snapshot", "create", instanceId, "--tag", tag]);
+      // Instance must be stopped to snapshot
+      yield* this.exec(["stop", instanceId, "--tty=false"]);
+      yield* this.execOrThrow(["snapshot", "create", instanceId, "--tag", tag]);
 
-    return {
-      id: `${instanceId}:${tag}`,
-      description,
-      status: "complete",
-      size: 0,
-      createdAt: new Date().toISOString(),
-    };
+      return {
+        id: `${instanceId}:${tag}`,
+        description,
+        status: "complete" as const,
+        size: 0,
+        createdAt: new Date().toISOString(),
+      };
+    });
   }
 
-  async listSnapshots(): Promise<Snapshot[]> {
-    const instances = await this.listInstances();
-    const snapshots: Snapshot[] = [];
+  listSnapshots(): Effect.Effect<Snapshot[], ProviderError> {
+    return Effect.gen(this, function* () {
+      const instances = yield* this.listInstances();
+      const snapshots: Snapshot[] = [];
 
-    for (const inst of instances) {
-      const result = await this.exec(["snapshot", "list", inst.id]);
-      if (result.exitCode !== 0) continue;
+      for (const inst of instances) {
+        const result = yield* this.exec(["snapshot", "list", inst.id]);
+        if (result.exitCode !== 0) continue;
 
-      for (const line of result.stdout.trim().split("\n")) {
-        const tag = line.trim();
-        if (!tag || tag.startsWith("NAME") || tag.startsWith("---")) continue;
-        snapshots.push({
-          id: `${inst.id}:${tag}`,
-          description: tag,
-          status: "complete",
-          size: 0,
-          createdAt: new Date().toISOString(),
-        });
+        for (const line of result.stdout.trim().split("\n")) {
+          const tag = line.trim();
+          if (!tag || tag.startsWith("NAME") || tag.startsWith("---")) continue;
+          snapshots.push({
+            id: `${inst.id}:${tag}`,
+            description: tag,
+            status: "complete",
+            size: 0,
+            createdAt: new Date().toISOString(),
+          });
+        }
       }
-    }
 
-    return snapshots;
+      return snapshots;
+    });
   }
 
-  async getSnapshot(id: string): Promise<Snapshot> {
-    const [instanceId, tag] = id.split(":");
-    if (!instanceId || !tag) {
-      throw new Error(`Invalid snapshot ID format: ${id} (expected "instance:tag")`);
-    }
+  getSnapshot(id: string): Effect.Effect<Snapshot, ProviderError> {
+    return Effect.gen(function* () {
+      const [instanceId, tag] = id.split(":");
+      if (!instanceId || !tag) {
+        return yield* Effect.fail(new ProviderError({
+          message: `Invalid snapshot ID format: ${id} (expected "instance:tag")`,
+          provider: "lima",
+          operation: "getSnapshot",
+        }));
+      }
 
-    return {
-      id,
-      description: tag,
-      status: "complete",
-      size: 0,
-      createdAt: new Date().toISOString(),
-    };
+      return {
+        id,
+        description: tag,
+        status: "complete" as const,
+        size: 0,
+        createdAt: new Date().toISOString(),
+      };
+    });
   }
 
-  async deleteSnapshot(id: string): Promise<void> {
-    const [instanceId, tag] = id.split(":");
-    if (!instanceId || !tag) {
-      throw new Error(`Invalid snapshot ID format: ${id} (expected "instance:tag")`);
-    }
-    await this.execOrThrow(["snapshot", "delete", instanceId, "--tag", tag]);
+  deleteSnapshot(id: string): Effect.Effect<void, ProviderError> {
+    return Effect.gen(this, function* () {
+      const [instanceId, tag] = id.split(":");
+      if (!instanceId || !tag) {
+        return yield* Effect.fail(new ProviderError({
+          message: `Invalid snapshot ID format: ${id} (expected "instance:tag")`,
+          provider: "lima",
+          operation: "deleteSnapshot",
+        }));
+      }
+      yield* this.execOrThrow(["snapshot", "delete", instanceId, "--tag", tag]);
+    });
   }
 
-  async waitForSnapshot(_id: string, _timeoutMs?: number): Promise<Snapshot> {
+  waitForSnapshot(_id: string, _timeoutMs?: number): Effect.Effect<Snapshot, ProviderError> {
     // Lima snapshots are instant (local disk)
     return this.getSnapshot(_id);
   }

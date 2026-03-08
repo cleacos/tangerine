@@ -1,66 +1,89 @@
 // Session cleanup: persist logs, kill processes, scrub credentials, release VM.
 // Logging ensures cleanup failures are traceable back to the originating task.
 
+import { Effect } from "effect"
 import { createLogger } from "../logger"
-import type { Task } from "../types"
+import { SessionCleanupError } from "../errors"
+import type { TaskRow } from "../db/types"
 
 const log = createLogger("cleanup")
 
 export interface CleanupDeps {
-  getSessionMessages(opencodePort: number, sessionId: string): Promise<unknown[]>
-  persistMessages(taskId: string, messages: unknown[]): void
-  sshExec(host: string, port: number, command: string): Promise<string>
-  releaseVm(vmId: string): Promise<void>
+  getSessionMessages(opencodePort: number, sessionId: string): Effect.Effect<unknown[], import("../errors").AgentError>
+  persistMessages(taskId: string, messages: unknown[]): Effect.Effect<void, import("../errors").DbError>
+  sshExec(host: string, port: number, command: string): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }, import("../errors").SshError>
+  releaseVm(vmId: string): Effect.Effect<void, import("../errors").DbError>
+  getTask(taskId: string): Effect.Effect<TaskRow | null, import("../errors").DbError>
 }
 
-export async function cleanupSession(
-  task: Task,
+export function cleanupSession(
+  taskId: string,
   deps: CleanupDeps,
-): Promise<void> {
-  const taskLog = log.child({ taskId: task.id, vmId: task.vmId })
-  const span = taskLog.startOp("cleanup")
+): Effect.Effect<void, SessionCleanupError> {
+  return Effect.gen(function* () {
+    const task = yield* deps.getTask(taskId).pipe(
+      Effect.mapError((e) => new SessionCleanupError({
+        message: `Failed to get task: ${e.message}`,
+        taskId,
+        cause: e,
+      }))
+    )
 
-  try {
-    // Persist chat messages before tearing down the session
-    if (task.opencodePort && task.opencodeSessionId) {
-      const messages = await deps.getSessionMessages(
-        task.opencodePort,
-        task.opencodeSessionId,
-      )
-      deps.persistMessages(task.id, messages)
-      taskLog.info("Session logs persisted", { messageCount: messages.length })
+    if (!task) {
+      log.warn("Cleanup requested for unknown task", { taskId })
+      return
     }
 
-    if (task.vmId) {
-      // Kill agent and dev server processes inside the VM
-      taskLog.debug("Killing processes")
-      try {
-        await deps.sshExec(
-          "", // ip resolved from vmId internally
-          0,
-          "pkill -f opencode; pkill -f 'dev server' || true",
+    const taskLog = log.child({ taskId: task.id, vmId: task.vm_id })
+    const span = taskLog.startOp("cleanup")
+
+    // Persist chat messages before tearing down the session (best-effort)
+    if (task.opencode_port && task.opencode_session_id) {
+      yield* Effect.gen(function* () {
+        const messages = yield* deps.getSessionMessages(
+          task.opencode_port!,
+          task.opencode_session_id!,
         )
-      } catch {
-        // Best-effort: process may already be gone
-        taskLog.debug("Process kill returned non-zero (expected if already stopped)")
-      }
+        yield* deps.persistMessages(task.id, messages)
+        taskLog.info("Session logs persisted", { messageCount: messages.length })
+      }).pipe(Effect.ignoreLogged)
+    }
 
-      // Remove injected credentials from VM before returning to pool
-      taskLog.debug("Scrubbing credentials")
-      try {
-        await deps.sshExec("", 0, "rm -f /home/agent/.env; unset ANTHROPIC_API_KEY GITHUB_TOKEN || true")
-      } catch {
-        taskLog.warn("Credential scrub failed, VM will be destroyed instead of recycled")
-      }
+    if (task.vm_id) {
+      // Kill agent and dev server processes inside the VM (best-effort)
+      yield* deps.sshExec(
+        "",
+        0,
+        "pkill -f opencode; pkill -f 'dev server' || true",
+      ).pipe(
+        Effect.tap(() => Effect.sync(() => taskLog.debug("Processes killed"))),
+        Effect.ignoreLogged
+      )
 
-      // Return VM to the warm pool (or destroy if tainted)
-      await deps.releaseVm(task.vmId)
+      // Remove injected credentials from VM before returning to pool (best-effort)
+      yield* deps.sshExec(
+        "",
+        0,
+        "rm -f /home/agent/.env; unset ANTHROPIC_API_KEY GITHUB_TOKEN || true",
+      ).pipe(
+        Effect.tap(() => Effect.sync(() => taskLog.debug("Credentials scrubbed"))),
+        Effect.tapError(() =>
+          Effect.sync(() => taskLog.warn("Credential scrub failed, VM will be destroyed instead of recycled"))
+        ),
+        Effect.ignoreLogged
+      )
+
+      // Return VM to the warm pool (must succeed for cleanup to be considered complete)
+      yield* deps.releaseVm(task.vm_id).pipe(
+        Effect.mapError((e) => new SessionCleanupError({
+          message: "VM release failed",
+          taskId,
+          cause: e,
+        }))
+      )
       taskLog.info("VM released")
     }
 
     span.end()
-  } catch (err) {
-    span.fail(err)
-    throw err
-  }
+  })
 }

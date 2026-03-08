@@ -1,3 +1,6 @@
+import type { Effect } from "effect"
+import type { ProviderError } from "../../errors"
+
 export interface Instance {
   id: string;
   label: string;
@@ -29,17 +32,17 @@ export interface CreateInstanceOptions {
 }
 
 export interface Provider {
-  createInstance(opts: CreateInstanceOptions): Promise<Instance>;
-  startInstance(id: string): Promise<void>;
-  stopInstance(id: string): Promise<void>;
-  destroyInstance(id: string): Promise<void>;
-  getInstance(id: string): Promise<Instance>;
-  listInstances(label?: string): Promise<Instance[]>;
-  waitForReady(id: string, timeoutMs?: number): Promise<Instance>;
+  createInstance(opts: CreateInstanceOptions): Effect.Effect<Instance, ProviderError>;
+  startInstance(id: string): Effect.Effect<void, ProviderError>;
+  stopInstance(id: string): Effect.Effect<void, ProviderError>;
+  destroyInstance(id: string): Effect.Effect<void, ProviderError>;
+  getInstance(id: string): Effect.Effect<Instance, ProviderError>;
+  listInstances(label?: string): Effect.Effect<Instance[], ProviderError>;
+  waitForReady(id: string, timeoutMs?: number): Effect.Effect<Instance, ProviderError>;
 
-  createSnapshot(instanceId: string, description: string): Promise<Snapshot>;
-  listSnapshots(): Promise<Snapshot[]>;
-  getSnapshot(id: string): Promise<Snapshot>;
-  deleteSnapshot(id: string): Promise<void>;
-  waitForSnapshot(id: string, timeoutMs?: number): Promise<Snapshot>;
+  createSnapshot(instanceId: string, description: string): Effect.Effect<Snapshot, ProviderError>;
+  listSnapshots(): Effect.Effect<Snapshot[], ProviderError>;
+  getSnapshot(id: string): Effect.Effect<Snapshot, ProviderError>;
+  deleteSnapshot(id: string): Effect.Effect<void, ProviderError>;
+  waitForSnapshot(id: string, timeoutMs?: number): Effect.Effect<Snapshot, ProviderError>;
 }

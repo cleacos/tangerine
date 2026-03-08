@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@tangerine/shared": "workspace:*",
+    "effect": "^3.12",
     "hono": "^4.7",
     "zod": "^3.24"
   },

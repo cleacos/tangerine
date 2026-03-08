@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from "bun:test"
+import { Effect } from "effect"
 import {
   acquireVm,
   releaseVm,
   reapIdleVms,
   reconcilePool,
 } from "../vm/pool"
-import type { PoolDeps, PoolConfig } from "../vm/pool"
+import type { PoolDeps, SimplePoolConfig } from "../vm/pool"
 
 /**
  * Tracer bullet: VM Pool -> Acquire -> Assign -> Release -> Reap
@@ -29,7 +30,7 @@ function createMockPoolDeps(): PoolDeps & { vms: Map<string, MockVm> } {
   return {
     vms,
 
-    async provisionVm(_snapshotId: string) {
+    provisionVm(_snapshotId: string) {
       const id = `vm-${nextId++}`
       const vm: MockVm = {
         id,
@@ -38,11 +39,12 @@ function createMockPoolDeps(): PoolDeps & { vms: Map<string, MockVm> } {
         idleSince: null,
       }
       vms.set(id, vm)
-      return vm as ReturnType<PoolDeps["provisionVm"]> extends Promise<infer T> ? T : never
+      return Effect.succeed(vm as ReturnType<PoolDeps["provisionVm"]> extends Effect.Effect<infer T, infer _E> ? T : never)
     },
 
-    async destroyVm(vmId: string) {
+    destroyVm(vmId: string) {
       vms.delete(vmId)
+      return Effect.succeed(undefined as void)
     },
 
     getVm(vmId: string) {
@@ -66,7 +68,7 @@ function createMockPoolDeps(): PoolDeps & { vms: Map<string, MockVm> } {
   }
 }
 
-const defaultConfig: PoolConfig = {
+const defaultConfig: SimplePoolConfig = {
   minReady: 0,
   idleTimeoutMs: 60_000,
   snapshotId: "snap-test",
@@ -80,7 +82,7 @@ describe("tracer: pool lifecycle", () => {
   })
 
   it("acquireVm provisions a new VM when pool is empty", async () => {
-    const vm = await acquireVm(deps, defaultConfig, "task-1")
+    const vm = await Effect.runPromise(acquireVm(deps, defaultConfig, "task-1"))
 
     expect(vm).toBeDefined()
     expect(vm.id).toBe("vm-1")
@@ -98,7 +100,7 @@ describe("tracer: pool lifecycle", () => {
       idleSince: null,
     })
 
-    const vm = await acquireVm(deps, defaultConfig, "task-2")
+    const vm = await Effect.runPromise(acquireVm(deps, defaultConfig, "task-2"))
 
     expect(vm.id).toBe("vm-warm")
     expect(vm.status).toBe("assigned")
@@ -108,10 +110,10 @@ describe("tracer: pool lifecycle", () => {
   })
 
   it("releaseVm returns VM to ready with idle_since", async () => {
-    const vm = await acquireVm(deps, defaultConfig, "task-3")
+    const vm = await Effect.runPromise(acquireVm(deps, defaultConfig, "task-3"))
     expect(vm.status).toBe("assigned")
 
-    await releaseVm(deps, vm.id)
+    await Effect.runPromise(releaseVm(deps, vm.id))
 
     const released = deps.vms.get(vm.id)!
     expect(released.status).toBe("ready")
@@ -130,10 +132,10 @@ describe("tracer: pool lifecycle", () => {
       idleSince: pastTime,
     })
 
-    const result = await reapIdleVms(deps, {
+    const result = await Effect.runPromise(reapIdleVms(deps, {
       ...defaultConfig,
       idleTimeoutMs: 60_000, // 60s timeout, VM idle for 120s
-    })
+    }))
 
     expect(result.destroyed).toBe(1)
     expect(deps.vms.has("vm-idle")).toBe(false)
@@ -148,20 +150,20 @@ describe("tracer: pool lifecycle", () => {
       idleSince: new Date().toISOString(),
     })
 
-    const result = await reapIdleVms(deps, {
+    const result = await Effect.runPromise(reapIdleVms(deps, {
       ...defaultConfig,
       idleTimeoutMs: 60_000,
-    })
+    }))
 
     expect(result.destroyed).toBe(0)
     expect(deps.vms.has("vm-recent")).toBe(true)
   })
 
   it("reconcilePool tops up pool to minReady", async () => {
-    const result = await reconcilePool(deps, {
+    const result = await Effect.runPromise(reconcilePool(deps, {
       ...defaultConfig,
       minReady: 2,
-    })
+    }))
 
     expect(result.created).toBe(2)
     // Should have 2 ready VMs now
@@ -178,11 +180,11 @@ describe("tracer: pool lifecycle", () => {
       idleSince: new Date(Date.now() - 120_000).toISOString(),
     })
 
-    const result = await reconcilePool(deps, {
+    const result = await Effect.runPromise(reconcilePool(deps, {
       minReady: 1,
       idleTimeoutMs: 60_000,
       snapshotId: "snap-test",
-    })
+    }))
 
     // Should reap the old one and create a new one
     expect(result.destroyed).toBe(1)
@@ -192,11 +194,11 @@ describe("tracer: pool lifecycle", () => {
 
   it("full acquire -> release -> reap cycle", async () => {
     // Acquire
-    const vm = await acquireVm(deps, defaultConfig, "task-cycle")
+    const vm = await Effect.runPromise(acquireVm(deps, defaultConfig, "task-cycle"))
     expect(vm.status).toBe("assigned")
 
     // Release
-    await releaseVm(deps, vm.id)
+    await Effect.runPromise(releaseVm(deps, vm.id))
     expect(deps.vms.get(vm.id)!.status).toBe("ready")
 
     // Simulate time passing by backdating idle_since
@@ -204,31 +206,31 @@ describe("tracer: pool lifecycle", () => {
     vmEntry.idleSince = new Date(Date.now() - 120_000).toISOString()
 
     // Reap
-    const result = await reapIdleVms(deps, {
+    const result = await Effect.runPromise(reapIdleVms(deps, {
       ...defaultConfig,
       idleTimeoutMs: 60_000,
-    })
+    }))
     expect(result.destroyed).toBe(1)
     expect(deps.vms.has(vm.id)).toBe(false)
   })
 
   it("handles provisioning errors gracefully", async () => {
     const failingDeps = createMockPoolDeps()
-    failingDeps.provisionVm = async () => {
-      throw new Error("Provider is down")
+    failingDeps.provisionVm = () => {
+      return Effect.fail(new Error("Provider is down"))
     }
 
     await expect(
-      acquireVm(failingDeps, defaultConfig, "task-fail")
+      Effect.runPromise(acquireVm(failingDeps, defaultConfig, "task-fail"))
     ).rejects.toThrow("Provider is down")
   })
 
   it("acquire -> release -> acquire reuses the same VM", async () => {
-    const vm1 = await acquireVm(deps, defaultConfig, "task-a")
+    const vm1 = await Effect.runPromise(acquireVm(deps, defaultConfig, "task-a"))
     const vmId = vm1.id
-    await releaseVm(deps, vmId)
+    await Effect.runPromise(releaseVm(deps, vmId))
 
-    const vm2 = await acquireVm(deps, defaultConfig, "task-b")
+    const vm2 = await Effect.runPromise(acquireVm(deps, defaultConfig, "task-b"))
     expect(vm2.id).toBe(vmId)
     expect(vm2.taskId).toBe("task-b")
   })

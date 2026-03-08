@@ -1,7 +1,10 @@
 // GitHub integration: polls for issues matching trigger criteria.
-// Logs polling results and skipped duplicates for debugging issue ingestion.
+// Wrapped in Effect with typed errors so polling failures surface
+// as GitHubPollError instead of uncaught exceptions.
 
+import { Effect } from "effect"
 import { createLogger } from "../logger"
+import { GitHubPollError } from "../errors"
 import type { ProjectConfig } from "../types"
 
 const log = createLogger("github")
@@ -27,33 +30,46 @@ interface GitHubIssue {
   assignee: { login: string } | null
 }
 
-export async function pollGitHubIssues(
+export function pollGitHubIssues(
   config: ProjectConfig,
   deps: GitHubDeps,
-): Promise<void> {
-  const trigger = config.integrations?.github?.trigger
-  if (!trigger) return
+): Effect.Effect<number, GitHubPollError> {
+  return Effect.gen(function* () {
+    const trigger = config.integrations?.github?.trigger
+    if (!trigger) return 0
 
-  const repo = config.repo
-  log.debug("Polling GitHub", { repo, trigger: `${trigger.type}:${trigger.value}` })
+    const repo = config.repo
+    log.debug("Polling GitHub", { repo, trigger: `${trigger.type}:${trigger.value}` })
 
-  try {
-    const response = await fetch(
-      `https://api.github.com/repos/${repo}/issues?state=open&per_page=50`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-          Accept: "application/vnd.github+json",
-        },
-      },
-    )
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        fetch(
+          `https://api.github.com/repos/${repo}/issues?state=open&per_page=50`,
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+              Accept: "application/vnd.github+json",
+            },
+          },
+        ),
+      catch: (e) =>
+        new GitHubPollError({ message: "GitHub API request failed", cause: e }),
+    })
 
     if (!response.ok) {
-      log.error("Poll error", { statusCode: response.status, message: response.statusText, repo })
-      return
+      return yield* Effect.fail(
+        new GitHubPollError({
+          message: `GitHub API returned ${response.status}: ${response.statusText}`,
+          statusCode: response.status,
+        }),
+      )
     }
 
-    const issues: GitHubIssue[] = await response.json()
+    const issues = yield* Effect.tryPromise({
+      try: () => response.json() as Promise<GitHubIssue[]>,
+      catch: (e) =>
+        new GitHubPollError({ message: "Failed to parse GitHub response", cause: e }),
+    })
 
     // Filter issues that match the configured trigger
     const matching = issues.filter((issue) => {
@@ -70,6 +86,7 @@ export async function pollGitHubIssues(
       log.info("Found new issues", { count: matching.length, repo })
     }
 
+    let created = 0
     for (const issue of matching) {
       const sourceId = `github:${repo}#${issue.number}`
 
@@ -86,13 +103,11 @@ export async function pollGitHubIssues(
         title: issue.title,
         description: issue.body ?? "",
       })
+      created++
     }
-  } catch (err) {
-    log.error("Poll error", {
-      repo,
-      error: err instanceof Error ? err.message : String(err),
-    })
-  }
+
+    return created
+  })
 }
 
 export function verifyWebhookSignature(

@@ -1,21 +1,19 @@
-export { getClient, removeClient, hasClient } from "./client.ts";
-export {
-  subscribeToTask,
-  unsubscribeFromTask,
-  addListener,
-  removeListener,
-} from "./events.ts";
+export { getOrCreateClient, getClient, removeClient, hasClient } from "./client"
+export { subscribeToEvents } from "./events"
+export type { EventHandler, SseSubscription } from "./events"
 export {
   enqueue,
-  handleAgentEvent,
+  setAgentState,
+  drainNext,
   getQueueLength,
   getAgentState,
-  clear as clearQueue,
-} from "./prompt-queue.ts";
+  clearQueue,
+} from "./prompt-queue"
+export type { SendPromptFn } from "./prompt-queue"
 export type {
   AgentState,
   EventListener,
   OpenCodeEvent,
   EventSubscription,
   QueuedPrompt,
-} from "./types.ts";
+} from "./types"

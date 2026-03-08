@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test"
 import type { Database } from "bun:sqlite"
+import { Effect } from "effect"
 import { Hono } from "hono"
 import { createTestDb } from "./helpers"
 import { createTask, getTask, listTasks, updateTaskStatus } from "../db/queries"
@@ -35,12 +36,12 @@ describe("tracer: config -> db -> api", () => {
 
     app.get("/api/tasks", (c) => {
       const status = c.req.query("status")
-      const rows = listTasks(db, status)
+      const rows = Effect.runSync(listTasks(db, status))
       return c.json(rows.map(mapTaskRow))
     })
 
     app.get("/api/tasks/:id", (c) => {
-      const row = getTask(db, c.req.param("id"))
+      const row = Effect.runSync(getTask(db, c.req.param("id")))
       if (!row) {
         return c.json({ error: "Task not found" }, 404)
       }
@@ -53,30 +54,30 @@ describe("tracer: config -> db -> api", () => {
         return c.json({ error: "repoUrl and title are required" }, 400)
       }
       const id = crypto.randomUUID()
-      const row = createTask(db, {
+      const row = Effect.runSync(createTask(db, {
         id,
         source: "manual",
         repo_url: body.repoUrl,
         title: body.title,
         description: body.description,
-      })
+      }))
       return c.json(mapTaskRow(row), 201)
     })
 
     app.post("/api/tasks/:id/cancel", async (c) => {
       const id = c.req.param("id")
-      const row = getTask(db, id)
+      const row = Effect.runSync(getTask(db, id))
       if (!row) {
         return c.json({ error: "Task not found" }, 404)
       }
-      updateTaskStatus(db, id, "cancelled")
-      const updated = getTask(db, id)!
+      Effect.runSync(updateTaskStatus(db, id, "cancelled"))
+      const updated = Effect.runSync(getTask(db, id))!
       return c.json(mapTaskRow(updated))
     })
   })
 
   it("GET /api/tasks returns tasks with camelCase field mapping", async () => {
-    createTask(db, {
+    Effect.runSync(createTask(db, {
       id: "task-abc",
       source: "github",
       repo_url: "https://github.com/test/repo",
@@ -84,7 +85,7 @@ describe("tracer: config -> db -> api", () => {
       source_id: "test/repo#42",
       source_url: "https://github.com/test/repo/issues/42",
       description: "Something is broken",
-    })
+    }))
 
     const res = await app.request("/api/tasks")
     expect(res.status).toBe(200)
@@ -110,12 +111,12 @@ describe("tracer: config -> db -> api", () => {
   })
 
   it("GET /api/tasks/:id returns a single task", async () => {
-    createTask(db, {
+    Effect.runSync(createTask(db, {
       id: "task-single",
       source: "manual",
       repo_url: "https://github.com/test/repo",
       title: "Single task",
-    })
+    }))
 
     const res = await app.request("/api/tasks/task-single")
     expect(res.status).toBe(200)
@@ -156,7 +157,7 @@ describe("tracer: config -> db -> api", () => {
     expect(task.status).toBe("created")
 
     // Verify task was persisted in DB
-    const dbRow = getTask(db, task.id)
+    const dbRow = Effect.runSync(getTask(db, task.id))
     expect(dbRow).not.toBeNull()
     expect(dbRow!.title).toBe("New task from API")
   })
@@ -174,12 +175,12 @@ describe("tracer: config -> db -> api", () => {
   })
 
   it("POST /api/tasks/:id/cancel updates task status", async () => {
-    createTask(db, {
+    Effect.runSync(createTask(db, {
       id: "task-cancel",
       source: "manual",
       repo_url: "https://github.com/test/repo",
       title: "Cancel me",
-    })
+    }))
 
     const res = await app.request("/api/tasks/task-cancel/cancel", {
       method: "POST",
@@ -209,19 +210,19 @@ describe("tracer: config -> db -> api", () => {
   })
 
   it("GET /api/tasks filters by status query param", async () => {
-    createTask(db, {
+    Effect.runSync(createTask(db, {
       id: "t-created",
       source: "manual",
       repo_url: "r",
       title: "Created",
-    })
-    createTask(db, {
+    }))
+    Effect.runSync(createTask(db, {
       id: "t-running",
       source: "manual",
       repo_url: "r",
       title: "Running",
-    })
-    updateTaskStatus(db, "t-running", "running")
+    }))
+    Effect.runSync(updateTaskStatus(db, "t-running", "running"))
 
     const resAll = await app.request("/api/tasks")
     const all = (await resAll.json()) as Task[]

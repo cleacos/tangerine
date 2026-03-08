@@ -1,52 +1,42 @@
+import { Effect } from "effect"
 import { Hono } from "hono"
 import type { AppDeps } from "../app"
 import { getTask, getSessionLogs } from "../../db/queries"
+import { runEffect, runEffectVoid } from "../effect-helpers"
 
 export function sessionRoutes(deps: AppDeps): Hono {
   const app = new Hono()
 
   app.get("/:id/messages", (c) => {
-    const id = c.req.param("id")
-    const task = getTask(deps.db, id)
-    if (!task) {
-      return c.json({ error: "Task not found" }, 404)
-    }
-    const logs = getSessionLogs(deps.db, id)
-    return c.json(logs)
+    return runEffect(c,
+      getSessionLogs(deps.db, c.req.param("id"))
+    )
   })
 
   app.post("/:id/prompt", async (c) => {
-    const id = c.req.param("id")
-    const task = getTask(deps.db, id)
-    if (!task) {
-      return c.json({ error: "Task not found" }, 404)
-    }
     const body = await c.req.json<{ text?: string }>()
     if (!body.text) {
       return c.json({ error: "text is required" }, 400)
     }
-    deps.taskManager.sendPrompt(id, body.text)
-    return c.json({ ok: true })
+    return runEffectVoid(c,
+      deps.taskManager.sendPrompt(c.req.param("id"), body.text)
+    )
   })
 
-  app.post("/:id/abort", async (c) => {
-    const id = c.req.param("id")
-    const task = getTask(deps.db, id)
-    if (!task) {
-      return c.json({ error: "Task not found" }, 404)
-    }
-    await deps.taskManager.abortTask(id)
-    return c.json({ ok: true })
+  app.post("/:id/abort", (c) => {
+    return runEffectVoid(c,
+      deps.taskManager.abortTask(c.req.param("id"))
+    )
   })
 
   app.get("/:id/diff", (c) => {
     const id = c.req.param("id")
-    const task = getTask(deps.db, id)
-    if (!task) {
-      return c.json({ error: "Task not found" }, 404)
-    }
     // Placeholder: real implementation requires OpenCode client
-    return c.json({ taskId: id, diff: "" })
+    return runEffect(c,
+      getTask(deps.db, id).pipe(
+        Effect.map(() => ({ taskId: id, diff: "" }))
+      )
+    )
   })
 
   return app

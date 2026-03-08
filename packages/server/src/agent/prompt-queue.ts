@@ -1,7 +1,10 @@
 // Prompt queue: buffers user messages while the agent is busy.
-// Logs enqueue/dequeue so prompt ordering issues can be debugged.
+// Wrapped in Effect so queue operations compose with the rest of the
+// Effect-based agent pipeline and prompt-send failures are typed.
 
+import { Effect } from "effect"
 import { createLogger, truncate } from "../logger"
+import { PromptError } from "../errors"
 
 const log = createLogger("prompt-queue")
 
@@ -30,53 +33,86 @@ function getQueue(taskId: string): TaskQueue {
 
 export type SendPromptFn = (taskId: string, text: string) => Promise<void>
 
-export function enqueue(taskId: string, text: string): void {
-  const q = getQueue(taskId)
-  q.entries.push({ text, enqueuedAt: Date.now() })
-  log.debug("Prompt enqueued", { taskId, queueLength: q.entries.length })
+export function enqueue(taskId: string, text: string): Effect.Effect<number, never> {
+  return Effect.sync(() => {
+    const q = getQueue(taskId)
+    q.entries.push({ text, enqueuedAt: Date.now() })
+    log.debug("Prompt enqueued", { taskId, queueLength: q.entries.length })
+    return q.entries.length
+  })
 }
 
-export function setAgentState(taskId: string, state: AgentState): void {
-  const q = getQueue(taskId)
-  const prev = q.state
-  q.state = state
-  if (prev !== state) {
-    log.debug("Agent state changed", { taskId, state, previousState: prev })
-  }
+export function setAgentState(taskId: string, state: AgentState): Effect.Effect<void, never> {
+  return Effect.sync(() => {
+    const q = getQueue(taskId)
+    const prev = q.state
+    q.state = state
+    if (prev !== state) {
+      log.debug("Agent state changed", { taskId, state, previousState: prev })
+    }
+  })
 }
 
-export async function drainNext(
+/**
+ * Dequeues and sends the next prompt if the agent is idle and the queue
+ * is non-empty. Re-queues the prompt at the front on failure so no
+ * messages are lost.
+ */
+export function drainNext(
   taskId: string,
   sendPrompt: SendPromptFn,
-): Promise<boolean> {
-  const q = getQueue(taskId)
-  if (q.state !== "idle" || q.entries.length === 0) return false
+): Effect.Effect<boolean, PromptError> {
+  return Effect.gen(function* () {
+    const q = getQueue(taskId)
+    if (q.state !== "idle" || q.entries.length === 0) return false
 
-  const entry = q.entries.shift()!
-  q.state = "busy"
+    const entry = q.entries.shift()!
+    q.state = "busy"
 
-  log.info("Sending next prompt", {
-    taskId,
-    promptPreview: truncate(entry.text, 80),
-    waitedMs: Date.now() - entry.enqueuedAt,
-  })
-
-  try {
-    await sendPrompt(taskId, entry.text)
-  } catch (err) {
-    // Put it back at the front on failure
-    q.entries.unshift(entry)
-    q.state = "idle"
-    log.error("Prompt send failed, re-queued", {
+    log.info("Sending next prompt", {
       taskId,
-      error: err instanceof Error ? err.message : String(err),
+      promptPreview: truncate(entry.text, 80),
+      waitedMs: Date.now() - entry.enqueuedAt,
     })
-    throw err
-  }
 
-  return true
+    yield* Effect.tryPromise({
+      try: () => sendPrompt(taskId, entry.text),
+      catch: (e) => {
+        // Put it back at the front on failure so no prompts are lost
+        q.entries.unshift(entry)
+        q.state = "idle"
+        log.error("Prompt send failed, re-queued", {
+          taskId,
+          error: e instanceof Error ? e.message : String(e),
+        })
+        return new PromptError({
+          message: "Failed to send prompt",
+          taskId,
+          cause: e,
+        })
+      },
+    })
+
+    return true
+  })
 }
 
-export function clearQueue(taskId: string): void {
-  queues.delete(taskId)
+export function getQueueLength(taskId: string): Effect.Effect<number, never> {
+  return Effect.sync(() => {
+    const q = queues.get(taskId)
+    return q ? q.entries.length : 0
+  })
+}
+
+export function getAgentState(taskId: string): Effect.Effect<AgentState, never> {
+  return Effect.sync(() => {
+    const q = queues.get(taskId)
+    return q ? q.state : "idle"
+  })
+}
+
+export function clearQueue(taskId: string): Effect.Effect<void, never> {
+  return Effect.sync(() => {
+    queues.delete(taskId)
+  })
 }

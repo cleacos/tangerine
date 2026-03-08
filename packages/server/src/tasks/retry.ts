@@ -1,56 +1,52 @@
-// Retry wrapper with exponential backoff.
+// Retry wrapper using Effect.retry with exponential backoff.
 // Logs each attempt so failures can be diagnosed from the timeline.
 
+import { Effect, Schedule } from "effect"
 import { createLogger } from "../logger"
+import { SessionStartError } from "../errors"
+import type { TaskRow } from "../db/types"
+import type { LifecycleDeps, ProjectConfig } from "./lifecycle"
+import { startSession } from "./lifecycle"
 
 const log = createLogger("retry")
 
-export interface RetryOptions {
-  maxAttempts: number
-  baseDelayMs: number
-  taskId?: string
+const MAX_RETRY_ATTEMPTS = 3
+
+export interface RetryDeps {
+  updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, import("../errors").DbError>
 }
 
-export async function withRetry<T>(
-  operation: string,
-  fn: () => Promise<T>,
-  options: RetryOptions,
-): Promise<T> {
-  const { maxAttempts, baseDelayMs, taskId } = options
-  let lastError: unknown
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const result = await fn()
-      if (attempt > 1) {
-        log.info("Retry succeeded", { taskId, op: operation, attempt })
-      }
-      return result
-    } catch (err) {
-      lastError = err
-      const errorMessage = err instanceof Error ? err.message : String(err)
-
-      if (attempt < maxAttempts) {
-        log.warn(`Retry attempt ${attempt}/${maxAttempts}`, {
-          taskId,
-          op: operation,
-          attempt,
-          maxAttempts,
-          error: errorMessage,
-        })
-        // Exponential backoff with jitter
-        const delay = baseDelayMs * 2 ** (attempt - 1) + Math.random() * baseDelayMs
-        await new Promise((resolve) => setTimeout(resolve, delay))
-      } else {
+export function startSessionWithRetry(
+  task: TaskRow,
+  config: ProjectConfig,
+  lifecycleDeps: LifecycleDeps,
+  retryDeps: RetryDeps,
+): Effect.Effect<void, never> {
+  return startSession(task, config, lifecycleDeps).pipe(
+    // Discard the SessionInfo on success since callers only care about side effects
+    Effect.asVoid,
+    Effect.retry(
+      Schedule.exponential("1 second").pipe(
+        Schedule.compose(Schedule.recurs(MAX_RETRY_ATTEMPTS - 1))
+      )
+    ),
+    Effect.tapError((error) =>
+      Effect.sync(() => {
         log.error("All retries exhausted", {
-          taskId,
-          op: operation,
-          attempts: maxAttempts,
-          lastError: errorMessage,
+          taskId: task.id,
+          attempts: MAX_RETRY_ATTEMPTS,
+          lastError: error.message,
         })
-      }
-    }
-  }
-
-  throw lastError
+      })
+    ),
+    Effect.catchAll((error) =>
+      // After all retries exhausted, mark task as failed
+      Effect.gen(function* () {
+        yield* retryDeps.updateTask(task.id, { status: "failed" }).pipe(Effect.ignoreLogged)
+        yield* retryDeps.updateTask(task.id, {
+          error: `Failed after ${MAX_RETRY_ATTEMPTS} attempts: ${error.message}`,
+        }).pipe(Effect.ignoreLogged)
+      })
+    )
+  )
 }

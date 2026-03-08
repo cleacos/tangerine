@@ -1,6 +1,7 @@
 import { loadConfig } from "../config.ts"
 import { getDb } from "../db/index.ts"
 import { listImages } from "../db/queries.ts"
+import { Effect } from "effect"
 import { createLogger } from "../logger.ts"
 import { printTable } from "./helpers.ts"
 
@@ -59,7 +60,7 @@ async function buildImage(argv: string[]): Promise<void> {
 
 async function listAvailableImages(): Promise<void> {
   const db = getDb()
-  const images = listImages(db)
+  const images = Effect.runSync(listImages(db))
 
   if (images.length === 0) {
     console.log("No images found. Build one with: tangerine image build <name>")

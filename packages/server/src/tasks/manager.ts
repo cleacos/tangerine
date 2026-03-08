@@ -1,19 +1,35 @@
 // Task manager: CRUD operations and state transitions for tasks.
 // Logs task creation, cancellation, completion, and prompt queueing for timeline reconstruction.
 
+import { Effect } from "effect"
 import { createLogger } from "../logger"
-import type { Task, TaskSource, TaskStatus } from "../types"
+import {
+  DbError,
+  TaskNotFoundError,
+  SessionCleanupError,
+  AgentError,
+} from "../errors"
+import type { TaskRow } from "../db/types"
+import type { LifecycleDeps, ProjectConfig } from "./lifecycle"
+import type { CleanupDeps } from "./cleanup"
+import type { RetryDeps } from "./retry"
+import { cleanupSession } from "./cleanup"
+import { startSessionWithRetry } from "./retry"
 
 const log = createLogger("tasks")
 
+export type TaskSource = "github" | "manual" | "api"
+
 export interface TaskManagerDeps {
-  insertTask(task: Task): void
-  updateTask(taskId: string, updates: Partial<Task>): void
-  getTask(taskId: string): Task | undefined
-  listTasks(filter?: { status?: TaskStatus }): Task[]
-  startSession(task: Task): Promise<void>
-  cleanupSession(task: Task): Promise<void>
-  abortAgent(opencodePort: number, sessionId: string): Promise<void>
+  insertTask(task: Pick<TaskRow, "id" | "source" | "repo_url" | "title"> & Partial<Pick<TaskRow, "source_id" | "source_url" | "description" | "user_id" | "branch">>): Effect.Effect<TaskRow, DbError>
+  updateTask(taskId: string, updates: Partial<Omit<TaskRow, "id">>): Effect.Effect<TaskRow | null, DbError>
+  getTask(taskId: string): Effect.Effect<TaskRow | null, DbError>
+  listTasks(filter?: { status?: string }): Effect.Effect<TaskRow[], DbError>
+  lifecycleDeps: LifecycleDeps
+  cleanupDeps: CleanupDeps
+  retryDeps: RetryDeps
+  projectConfig: ProjectConfig
+  abortAgent(opencodePort: number, sessionId: string): Effect.Effect<void, AgentError>
 }
 
 // Prompt queue per task (sent sequentially so agent completes one before starting next)
@@ -29,98 +45,101 @@ export function createTask(
     title: string
     description?: string
   },
-): Task {
-  const id = crypto.randomUUID()
-  const now = new Date().toISOString()
+): Effect.Effect<TaskRow, DbError> {
+  return Effect.gen(function* () {
+    const id = crypto.randomUUID()
 
-  const task: Task = {
-    id,
-    source: params.source,
-    sourceId: params.sourceId ?? null,
-    sourceUrl: params.sourceUrl ?? null,
-    repoUrl: params.repoUrl,
-    title: params.title,
-    description: params.description ?? null,
-    status: "created",
-    vmId: null,
-    branch: null,
-    prUrl: null,
-    userId: null,
-    opencodeSessionId: null,
-    opencodePort: null,
-    previewPort: null,
-    error: null,
-    createdAt: now,
-    updatedAt: now,
-    startedAt: null,
-    completedAt: null,
-  }
-
-  deps.insertTask(task)
-  log.info("Task created", { taskId: id, source: params.source, title: params.title })
-
-  // Kick off provisioning asynchronously
-  deps.startSession(task).catch((err) => {
-    log.error("Session start failed", {
-      taskId: id,
-      error: err instanceof Error ? err.message : String(err),
+    const task = yield* deps.insertTask({
+      id,
+      source: params.source,
+      source_id: params.sourceId ?? null,
+      source_url: params.sourceUrl ?? null,
+      repo_url: params.repoUrl,
+      title: params.title,
+      description: params.description ?? null,
     })
-  })
 
-  return task
+    log.info("Task created", { taskId: id, source: params.source, title: params.title })
+
+    // Kick off provisioning in a background fiber so task creation is non-blocking
+    yield* Effect.fork(
+      startSessionWithRetry(task, deps.projectConfig, deps.lifecycleDeps, deps.retryDeps)
+    )
+
+    return task
+  })
 }
 
-export async function cancelTask(
+export function cancelTask(
   deps: TaskManagerDeps,
   taskId: string,
-): Promise<void> {
-  const task = deps.getTask(taskId)
-  if (!task) {
-    log.warn("Cancel requested for unknown task", { taskId })
-    return
-  }
+): Effect.Effect<void, TaskNotFoundError | SessionCleanupError> {
+  return Effect.gen(function* () {
+    const task = yield* deps.getTask(taskId).pipe(
+      Effect.mapError(() => new TaskNotFoundError({ taskId }))
+    )
 
-  log.info("Task cancelled", { taskId })
-  deps.updateTask(taskId, {
-    status: "cancelled",
-    completedAt: new Date().toISOString(),
+    if (!task) {
+      return yield* new TaskNotFoundError({ taskId })
+    }
+
+    log.info("Task cancelled", { taskId })
+    yield* deps.updateTask(taskId, {
+      status: "cancelled",
+      completed_at: new Date().toISOString(),
+    }).pipe(
+      // DB update errors during cancel are non-critical for the cancel flow
+      Effect.ignoreLogged
+    )
+
+    // Clean up running session if active
+    if (task.status === "running" || task.status === "provisioning") {
+      yield* cleanupSession(taskId, deps.cleanupDeps).pipe(
+        Effect.catchTag("SessionCleanupError", (e) => {
+          log.error("Cleanup after cancel failed", {
+            taskId,
+            error: e.message,
+          })
+          return Effect.void
+        })
+      )
+    }
   })
+}
 
-  // Clean up any running session
-  if (task.status === "running" || task.status === "provisioning") {
-    await deps.cleanupSession(task).catch((err) => {
-      log.error("Cleanup after cancel failed", {
-        taskId,
-        error: err instanceof Error ? err.message : String(err),
+export function completeTask(
+  deps: TaskManagerDeps,
+  taskId: string,
+): Effect.Effect<void, TaskNotFoundError | SessionCleanupError> {
+  return Effect.gen(function* () {
+    const task = yield* deps.getTask(taskId).pipe(
+      Effect.mapError(() => new TaskNotFoundError({ taskId }))
+    )
+
+    if (!task) {
+      return yield* new TaskNotFoundError({ taskId })
+    }
+
+    const now = new Date().toISOString()
+    let durationMs: number | undefined
+    if (task.started_at) {
+      durationMs = new Date(now).getTime() - new Date(task.started_at).getTime()
+    }
+
+    yield* deps.updateTask(taskId, { status: "done", completed_at: now }).pipe(
+      Effect.ignoreLogged
+    )
+    log.info("Task completed", { taskId, durationMs })
+
+    yield* cleanupSession(taskId, deps.cleanupDeps).pipe(
+      Effect.catchTag("SessionCleanupError", (e) => {
+        log.error("Cleanup after completion failed", {
+          taskId,
+          error: e.message,
+        })
+        return Effect.void
       })
-    })
-  }
-}
-
-export async function completeTask(
-  deps: TaskManagerDeps,
-  taskId: string,
-): Promise<void> {
-  const task = deps.getTask(taskId)
-  if (!task) {
-    log.warn("Complete requested for unknown task", { taskId })
-    return
-  }
-
-  const now = new Date().toISOString()
-  let durationMs: number | undefined
-  if (task.startedAt) {
-    durationMs = new Date(now).getTime() - new Date(task.startedAt).getTime()
-  }
-
-  deps.updateTask(taskId, { status: "done", completedAt: now })
-  log.info("Task completed", { taskId, durationMs })
-
-  await deps.cleanupSession(task).catch((err) => {
-    log.error("Cleanup after completion failed", {
-      taskId,
-      error: err instanceof Error ? err.message : String(err),
-    })
+    )
   })
 }
 
@@ -140,24 +159,21 @@ export function dequeuePrompt(taskId: string): string | undefined {
   return queue.shift()
 }
 
-export async function abortAgent(
+export function abortAgent(
   deps: TaskManagerDeps,
   taskId: string,
-): Promise<void> {
-  const task = deps.getTask(taskId)
-  if (!task?.opencodePort || !task.opencodeSessionId) {
-    log.warn("Abort requested but no active session", { taskId })
-    return
-  }
+): Effect.Effect<void, TaskNotFoundError | AgentError> {
+  return Effect.gen(function* () {
+    const task = yield* deps.getTask(taskId).pipe(
+      Effect.mapError(() => new TaskNotFoundError({ taskId }))
+    )
 
-  log.info("Agent aborted", { taskId })
-  try {
-    await deps.abortAgent(task.opencodePort, task.opencodeSessionId)
-  } catch (err) {
-    log.error("Agent abort failed", {
-      taskId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    throw err
-  }
+    if (!task?.opencode_port || !task.opencode_session_id) {
+      log.warn("Abort requested but no active session", { taskId })
+      return yield* new TaskNotFoundError({ taskId })
+    }
+
+    log.info("Agent aborted", { taskId })
+    yield* deps.abortAgent(task.opencode_port, task.opencode_session_id)
+  })
 }

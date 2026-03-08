@@ -1,6 +1,18 @@
 import { describe, it, expect, beforeEach, mock, afterEach, spyOn } from "bun:test"
+import { Effect } from "effect"
 import { pollGitHubIssues, type GitHubDeps } from "../integrations/github"
-import type { ProjectConfig } from "../types"
+/** Local ProjectConfig type matching github module's interface */
+interface ProjectConfig {
+  repo: string
+  integrations?: {
+    github?: {
+      trigger: {
+        type: "label" | "assignee"
+        value: string
+      }
+    }
+  }
+}
 
 /**
  * Tracer bullet: GitHub API response -> Task creation -> Deduplication
@@ -31,15 +43,15 @@ function makeIssue(num: number, overrides?: Partial<MockGitHubIssue>): MockGitHu
   }
 }
 
-function makeConfig(trigger: { type: string; value: string }): ProjectConfig {
+function makeConfig(trigger: { type: "label" | "assignee"; value: string }): ProjectConfig {
   return {
     repo: "test/repo",
     integrations: {
       github: {
-        trigger: trigger as ProjectConfig["integrations"] extends { github?: { trigger: infer T } } ? T : never,
+        trigger,
       },
     },
-  } as ProjectConfig
+  }
 }
 
 describe("tracer: github polling -> task creation -> dedup", () => {
@@ -90,7 +102,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
     ) as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
-    await pollGitHubIssues(config, deps)
+    await Effect.runPromise(pollGitHubIssues(config, deps))
 
     expect(createdTasks).toHaveLength(2)
     expect(createdTasks[0]!.title).toBe("Issue #1")
@@ -112,7 +124,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
     ) as typeof fetch
 
     const config = makeConfig({ type: "label", value: "agent" })
-    await pollGitHubIssues(config, deps)
+    await Effect.runPromise(pollGitHubIssues(config, deps))
 
     expect(createdTasks).toHaveLength(2)
     expect(createdTasks[0]!.title).toBe("Issue #1")
@@ -135,11 +147,11 @@ describe("tracer: github polling -> task creation -> dedup", () => {
     const config = makeConfig({ type: "assignee", value: "bot" })
 
     // First poll — creates 2 tasks
-    await pollGitHubIssues(config, deps)
+    await Effect.runPromise(pollGitHubIssues(config, deps))
     expect(createdTasks).toHaveLength(2)
 
     // Second poll with same issues — should not create duplicates
-    await pollGitHubIssues(config, deps)
+    await Effect.runPromise(pollGitHubIssues(config, deps))
     expect(createdTasks).toHaveLength(2)
   })
 
@@ -161,7 +173,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
     ) as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
-    await pollGitHubIssues(config, deps)
+    await Effect.runPromise(pollGitHubIssues(config, deps))
 
     expect(createdTasks).toHaveLength(2) // Only #2 and #3
     expect(createdTasks.map((t) => t.sourceId)).toEqual([
@@ -181,7 +193,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
     const config = makeConfig({ type: "assignee", value: "bot" })
 
     // pollGitHubIssues catches errors internally and logs them
-    await expect(pollGitHubIssues(config, deps)).resolves.toBeUndefined()
+    await expect(Effect.runPromise(pollGitHubIssues(config, deps))).resolves.toBeUndefined()
     expect(createdTasks).toHaveLength(0)
   })
 
@@ -190,7 +202,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
     globalThis.fetch = fetchMock as typeof fetch
 
     const config = { repo: "test/repo" } as ProjectConfig
-    await pollGitHubIssues(config, deps)
+    await Effect.runPromise(pollGitHubIssues(config, deps))
 
     // fetch should not have been called
     expect(fetchMock).not.toHaveBeenCalled()
@@ -206,7 +218,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
     ) as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
-    await pollGitHubIssues(config, deps)
+    await Effect.runPromise(pollGitHubIssues(config, deps))
 
     expect(createdTasks).toHaveLength(0)
   })
@@ -229,7 +241,7 @@ describe("tracer: github polling -> task creation -> dedup", () => {
     ) as typeof fetch
 
     const config = makeConfig({ type: "assignee", value: "bot" })
-    await pollGitHubIssues(config, deps)
+    await Effect.runPromise(pollGitHubIssues(config, deps))
 
     expect(createdTasks).toHaveLength(1)
     const task = createdTasks[0]!

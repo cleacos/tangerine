@@ -9,8 +9,9 @@
 
 import { resolve, join } from "path";
 import { existsSync } from "fs";
+import { Effect } from "effect";
 import { LimaProvider } from "../vm/providers/lima.ts";
-import { sshExec, waitForSsh, buildSshArgs } from "../vm/ssh.ts";
+import { sshExec, waitForSsh } from "../vm/ssh.ts";
 import { getDb } from "../db/index.ts";
 import { createImage } from "../db/queries.ts";
 
@@ -28,23 +29,20 @@ async function buildImage(imageName: string): Promise<void> {
 
   // Step 1: Create Lima VM from template
   console.log("\n==> Creating VM from template...");
-  const instance = await provider.createInstance({
+  const instance = await Effect.runPromise(provider.createInstance({
     region: "local",
     plan: "4cpu-8gb",
     label,
-  });
+  }));
   console.log(`VM created: ${instance.id} (ip: ${instance.ip}, port: ${instance.sshPort})`);
 
   try {
     // Step 2: Wait for VM to be ready + SSH
     console.log("\n==> Waiting for SSH...");
-    await waitForSsh(
+    await Effect.runPromise(waitForSsh(
       instance.ip,
-      "agent",
-      180_000,
-      instance.sshPort,
-      (msg) => console.log(`  ${msg}`)
-    );
+      instance.sshPort ?? 22,
+    ));
     console.log("SSH ready");
 
     // Step 3: Run image-specific build script if it exists
@@ -55,65 +53,52 @@ async function buildImage(imageName: string): Promise<void> {
       const scriptBase64 = Buffer.from(scriptContent).toString("base64");
 
       // Upload build script to VM via stdin
-      const uploadArgs = buildSshArgs(
-        "agent",
-        instance.ip,
-        instance.sshPort,
-        "base64 -d > /tmp/build.sh && chmod +x /tmp/build.sh"
+      const uploadProc = Bun.spawn(
+        ["ssh", "-o", "StrictHostKeyChecking=no", "-p", String(instance.sshPort ?? 22),
+         `agent@${instance.ip}`, "base64 -d > /tmp/build.sh && chmod +x /tmp/build.sh"],
+        {
+          stdin: Buffer.from(scriptBase64),
+          stdout: "pipe",
+          stderr: "pipe",
+        }
       );
-      const uploadProc = Bun.spawn(uploadArgs, {
-        stdin: Buffer.from(scriptBase64),
-        stdout: "pipe",
-        stderr: "pipe",
-      });
       const uploadExit = await uploadProc.exited;
       if (uploadExit !== 0) {
         const stderr = await new Response(uploadProc.stderr).text();
         throw new Error(`Failed to upload build script: ${stderr}`);
       }
 
-      // Execute the build script with PATH configured for bun/node
-      const buildResult = await sshExec({
-        host: instance.ip,
-        port: instance.sshPort,
-        command: "bash -l /tmp/build.sh",
-        env: {
-          PATH: "/home/agent/.local/bin:/home/agent/.bun/bin:/usr/local/bin:/usr/bin:/bin",
-        },
-        timeoutMs: 600_000, // 10 minutes for build scripts
-      });
-
-      if (buildResult.stdout) console.log(buildResult.stdout);
-      if (buildResult.stderr) console.error(buildResult.stderr);
-
-      if (buildResult.exitCode !== 0) {
-        throw new Error(`Build script failed with exit code ${buildResult.exitCode}`);
-      }
+      // Execute the build script
+      const buildResult = await Effect.runPromise(sshExec(
+        instance.ip,
+        instance.sshPort ?? 22,
+        "bash -l /tmp/build.sh",
+      ));
+      if (buildResult) console.log(buildResult);
 
       // Clean up build script
-      await sshExec({
-        host: instance.ip,
-        port: instance.sshPort,
-        command: "rm -f /tmp/build.sh",
-        timeoutMs: 10_000,
-      });
+      await Effect.runPromise(sshExec(
+        instance.ip,
+        instance.sshPort ?? 22,
+        "rm -f /tmp/build.sh",
+      ));
     } else {
       console.log(`\n==> No build script found at ${buildScriptPath}, using base image only`);
     }
 
     // Step 4: Create snapshot
     console.log("\n==> Creating snapshot...");
-    const snapshot = await provider.createSnapshot(instance.id, imageName);
+    const snapshot = await Effect.runPromise(provider.createSnapshot(instance.id, imageName));
     console.log(`Snapshot created: ${snapshot.id}`);
 
     // Step 5: Record in DB
     const imageId = `img-${imageName}-${Date.now()}`;
-    createImage(db, {
+    Effect.runSync(createImage(db, {
       id: imageId,
       name: imageName,
       provider: "lima",
       snapshot_id: snapshot.id,
-    });
+    }));
     console.log(`Image recorded in DB: ${imageId}`);
 
     console.log(`\nGolden image "${imageName}" built successfully.`);
@@ -123,7 +108,7 @@ async function buildImage(imageName: string): Promise<void> {
     // Step 6: Destroy build VM
     console.log("\n==> Destroying build VM...");
     try {
-      await provider.destroyInstance(instance.id);
+      await Effect.runPromise(provider.destroyInstance(instance.id));
       console.log("Build VM destroyed");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

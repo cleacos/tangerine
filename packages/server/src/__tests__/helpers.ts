@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite"
+import { Effect } from "effect"
 import { SCHEMA } from "../db/schema"
 import type { TaskRow } from "../db/types"
 import type { Provider, Instance, Snapshot, CreateInstanceOptions } from "../vm/providers/types"
@@ -12,14 +13,14 @@ export function createTestDb(): Database {
   return db
 }
 
-/** Create a mock Provider that tracks instances in memory */
+/** Create a mock Provider that tracks instances in memory and returns Effect types */
 export function createMockProvider(): Provider & { instances: Map<string, Instance> } {
   const instances = new Map<string, Instance>()
 
   return {
     instances,
 
-    async createInstance(opts: CreateInstanceOptions): Promise<Instance> {
+    createInstance(opts: CreateInstanceOptions) {
       const id = opts.label ?? `inst-${Date.now()}`
       const instance: Instance = {
         id,
@@ -33,68 +34,86 @@ export function createMockProvider(): Provider & { instances: Map<string, Instan
         sshPort: 22,
       }
       instances.set(id, instance)
-      return instance
+      return Effect.succeed(instance)
     },
 
-    async startInstance(id: string): Promise<void> {
-      const inst = instances.get(id)
-      if (inst) inst.status = "active"
+    startInstance(id: string) {
+      return Effect.sync(() => {
+        const inst = instances.get(id)
+        if (inst) inst.status = "active"
+      })
     },
 
-    async stopInstance(id: string): Promise<void> {
-      const inst = instances.get(id)
-      if (inst) inst.status = "stopped"
+    stopInstance(id: string) {
+      return Effect.sync(() => {
+        const inst = instances.get(id)
+        if (inst) inst.status = "stopped"
+      })
     },
 
-    async destroyInstance(id: string): Promise<void> {
-      instances.delete(id)
+    destroyInstance(id: string) {
+      return Effect.sync(() => {
+        instances.delete(id)
+      })
     },
 
-    async getInstance(id: string): Promise<Instance> {
-      const inst = instances.get(id)
-      if (!inst) throw new Error(`Instance ${id} not found`)
-      return inst
+    getInstance(id: string) {
+      return Effect.sync(() => {
+        const inst = instances.get(id)
+        if (!inst) throw new Error(`Instance ${id} not found`)
+        return inst
+      })
     },
 
-    async listInstances(): Promise<Instance[]> {
-      return [...instances.values()]
+    listInstances() {
+      return Effect.succeed([...instances.values()])
     },
 
-    async waitForReady(id: string): Promise<Instance> {
-      const inst = instances.get(id)
-      if (!inst) throw new Error(`Instance ${id} not found`)
-      inst.status = "active"
-      return inst
+    waitForReady(id: string) {
+      return Effect.sync(() => {
+        const inst = instances.get(id)
+        if (!inst) throw new Error(`Instance ${id} not found`)
+        inst.status = "active"
+        return inst
+      })
     },
 
-    async createSnapshot(_instanceId: string, description: string): Promise<Snapshot> {
-      return {
+    createSnapshot(_instanceId: string, description: string) {
+      return Effect.succeed({
         id: `snap-${Date.now()}`,
         description,
-        status: "complete",
+        status: "complete" as const,
         size: 1024,
         createdAt: new Date().toISOString(),
-      }
+      })
     },
 
-    async listSnapshots(): Promise<Snapshot[]> {
-      return []
+    listSnapshots() {
+      return Effect.succeed([])
     },
 
-    async getSnapshot(id: string): Promise<Snapshot> {
-      return {
+    getSnapshot(id: string) {
+      return Effect.succeed({
         id,
         description: "test",
-        status: "complete",
+        status: "complete" as const,
         size: 1024,
         createdAt: new Date().toISOString(),
-      }
+      })
     },
 
-    async deleteSnapshot(): Promise<void> {},
+    deleteSnapshot() {
+      return Effect.succeed(undefined as void)
+    },
 
-    async waitForSnapshot(id: string): Promise<Snapshot> {
-      return this.getSnapshot(id)
+    waitForSnapshot(id: string) {
+      return Effect.succeed({
+        id,
+        description: "test",
+        status: "complete" as const,
+        size: 1024,
+        createdAt: new Date().toISOString(),
+      })
     },
   }
 }

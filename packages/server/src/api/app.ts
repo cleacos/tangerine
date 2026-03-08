@@ -1,55 +1,60 @@
 // Hono API server: REST + WebSocket + webhook handlers.
 // Error handler logs structured context for debugging API failures.
 
+import type { Effect } from "effect"
 import { Hono } from "hono"
 import { logger as honoLogger } from "hono/logger"
 import { createLogger } from "../logger"
+import type { AppConfig } from "../config"
+import type { Database } from "bun:sqlite"
+import type { TaskRow } from "../db/types"
+import { taskRoutes } from "./routes/tasks"
+import { sessionRoutes } from "./routes/sessions"
+import { systemRoutes } from "./routes/system"
+import { previewRoutes } from "./routes/preview"
+import { projectRoutes } from "./routes/project"
+import { wsRoutes } from "./routes/ws"
+import type { WsSetup } from "./routes/ws"
 
 const log = createLogger("api")
 
-export function createApp(): Hono {
+// Tagged error constraint — all Effect errors flowing through route handlers
+// must carry a _tag for HTTP status mapping in effect-helpers
+interface TaggedError { _tag: string; message?: string }
+
+// Shared dependency bag passed to all route modules
+export interface AppDeps {
+  db: Database
+  taskManager: {
+    createTask(source: string, repoUrl: string, title: string, description?: string): Effect.Effect<TaskRow, TaggedError>
+    cancelTask(taskId: string): Effect.Effect<void, TaggedError>
+    completeTask(taskId: string): Effect.Effect<void, TaggedError>
+    sendPrompt(taskId: string, text: string): Effect.Effect<void, TaggedError>
+    abortTask(taskId: string): Effect.Effect<void, TaggedError>
+    onTaskEvent(taskId: string, handler: (data: unknown) => void): () => void
+    onStatusChange(taskId: string, handler: (status: string) => void): () => void
+  }
+  pool: {
+    getPoolStats(): Effect.Effect<unknown, TaggedError>
+  }
+  config: AppConfig
+}
+
+export function createApp(deps: AppDeps): { app: Hono; websocket: WsSetup["websocket"] } {
   const app = new Hono()
 
   // Hono's built-in request logger for HTTP access logs
   app.use("*", honoLogger())
 
-  // Health check
-  app.get("/api/health", (c) => c.json({ status: "ok" }))
+  // Wire route modules
+  app.route("/api", systemRoutes(deps))
+  app.route("/api/tasks", taskRoutes(deps))
+  app.route("/api/tasks", sessionRoutes(deps))
+  app.route("/api/project", projectRoutes(deps))
+  app.route("/preview", previewRoutes(deps))
 
-  // Tasks CRUD
-  app.get("/api/tasks", (c) => {
-    // TODO: wire to task manager
-    return c.json({ tasks: [] })
-  })
-
-  app.get("/api/tasks/:id", (c) => {
-    const _id = c.req.param("id")
-    // TODO: wire to task manager
-    return c.json({ error: "not implemented" }, 501)
-  })
-
-  app.post("/api/tasks", async (c) => {
-    // TODO: wire to task manager
-    return c.json({ error: "not implemented" }, 501)
-  })
-
-  app.post("/api/tasks/:id/cancel", async (c) => {
-    const _id = c.req.param("id")
-    // TODO: wire to task manager
-    return c.json({ error: "not implemented" }, 501)
-  })
-
-  app.post("/api/tasks/:id/prompt", async (c) => {
-    const _id = c.req.param("id")
-    // TODO: wire to prompt queue
-    return c.json({ error: "not implemented" }, 501)
-  })
-
-  app.post("/api/tasks/:id/abort", async (c) => {
-    const _id = c.req.param("id")
-    // TODO: wire to agent abort
-    return c.json({ error: "not implemented" }, 501)
-  })
+  const { routes: wsApp, websocket } = wsRoutes(deps)
+  app.route("/api/tasks", wsApp)
 
   // Webhook endpoint
   app.post("/webhooks/github", async (c) => {
@@ -65,8 +70,8 @@ export function createApp(): Hono {
       error: err.message,
       stack: err.stack?.split("\n").slice(0, 5).join("\n"),
     })
-    return c.json({ error: "Internal server error" }, 500)
+    return c.json({ error: err.message ?? "Internal server error" }, 500)
   })
 
-  return app
+  return { app, websocket }
 }

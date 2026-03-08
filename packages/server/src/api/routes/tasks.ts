@@ -1,6 +1,8 @@
+import { Effect } from "effect"
 import { Hono } from "hono"
 import type { AppDeps } from "../app"
 import { mapTaskRow } from "../helpers"
+import { runEffect, runEffectVoid } from "../effect-helpers"
 import { getTask, listTasks } from "../../db/queries"
 
 export function taskRoutes(deps: AppDeps): Hono {
@@ -8,16 +10,19 @@ export function taskRoutes(deps: AppDeps): Hono {
 
   app.get("/", (c) => {
     const status = c.req.query("status")
-    const rows = listTasks(deps.db, status)
-    return c.json(rows.map(mapTaskRow))
+    return runEffect(c,
+      listTasks(deps.db, status).pipe(
+        Effect.map(rows => rows.map(mapTaskRow))
+      )
+    )
   })
 
   app.get("/:id", (c) => {
-    const row = getTask(deps.db, c.req.param("id"))
-    if (!row) {
-      return c.json({ error: "Task not found" }, 404)
-    }
-    return c.json(mapTaskRow(row))
+    return runEffect(c,
+      getTask(deps.db, c.req.param("id")).pipe(
+        Effect.map(mapTaskRow)
+      )
+    )
   })
 
   app.post("/", async (c) => {
@@ -25,30 +30,24 @@ export function taskRoutes(deps: AppDeps): Hono {
     if (!body.repoUrl || !body.title) {
       return c.json({ error: "repoUrl and title are required" }, 400)
     }
-    const row = await deps.taskManager.createTask("manual", body.repoUrl, body.title, body.description)
-    return c.json(mapTaskRow(row), 201)
+    return runEffect(c,
+      deps.taskManager.createTask("manual", body.repoUrl, body.title, body.description).pipe(
+        Effect.map(mapTaskRow)
+      ),
+      { status: 201 }
+    )
   })
 
-  app.post("/:id/cancel", async (c) => {
-    const id = c.req.param("id")
-    const row = getTask(deps.db, id)
-    if (!row) {
-      return c.json({ error: "Task not found" }, 404)
-    }
-    await deps.taskManager.cancelTask(id)
-    const updated = getTask(deps.db, id)!
-    return c.json(mapTaskRow(updated))
+  app.post("/:id/cancel", (c) => {
+    return runEffectVoid(c,
+      deps.taskManager.cancelTask(c.req.param("id"))
+    )
   })
 
-  app.post("/:id/done", async (c) => {
-    const id = c.req.param("id")
-    const row = getTask(deps.db, id)
-    if (!row) {
-      return c.json({ error: "Task not found" }, 404)
-    }
-    await deps.taskManager.completeTask(id)
-    const updated = getTask(deps.db, id)!
-    return c.json(mapTaskRow(updated))
+  app.post("/:id/done", (c) => {
+    return runEffectVoid(c,
+      deps.taskManager.completeTask(c.req.param("id"))
+    )
   })
 
   return app

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
+import { Effect } from "effect";
 import { Database } from "bun:sqlite";
 import { VMPoolManager } from "../pool.ts";
 import type { VmRow } from "../pool.ts";
@@ -15,62 +16,62 @@ function createMockProvider(overrides?: Partial<Provider>): Provider {
   let instanceCounter = 0;
 
   return {
-    async createInstance(opts: CreateInstanceOptions): Promise<Instance> {
+    createInstance(opts: CreateInstanceOptions) {
       instanceCounter++;
       const id = opts.label ?? `mock-${instanceCounter}`;
-      return {
+      return Effect.succeed({
         id,
         label: id,
         ip: `10.0.0.${instanceCounter}`,
-        status: "active",
+        status: "active" as const,
         region: opts.region,
         plan: opts.plan,
         createdAt: new Date().toISOString(),
         sshPort: 22,
-      };
+      });
     },
-    async startInstance(_id: string) {},
-    async stopInstance(_id: string) {},
-    async destroyInstance(_id: string) {},
-    async getInstance(id: string): Promise<Instance> {
-      return {
+    startInstance(_id: string) { return Effect.succeed(undefined as void); },
+    stopInstance(_id: string) { return Effect.succeed(undefined as void); },
+    destroyInstance(_id: string) { return Effect.succeed(undefined as void); },
+    getInstance(id: string) {
+      return Effect.succeed({
         id,
         label: id,
         ip: "10.0.0.1",
-        status: "active",
+        status: "active" as const,
         region: "local",
         plan: "2cpu-4gb",
         createdAt: new Date().toISOString(),
         sshPort: 22,
-      };
+      });
     },
-    async listInstances(_label?: string): Promise<Instance[]> {
-      return [];
+    listInstances(_label?: string) {
+      return Effect.succeed([] as Instance[]);
     },
-    async waitForReady(id: string, _timeoutMs?: number): Promise<Instance> {
-      return {
+    waitForReady(id: string, _timeoutMs?: number) {
+      return Effect.succeed({
         id,
         label: id,
         ip: "10.0.0.1",
-        status: "active",
+        status: "active" as const,
         region: "local",
         plan: "2cpu-4gb",
         createdAt: new Date().toISOString(),
         sshPort: 22,
-      };
+      });
     },
-    async createSnapshot(_instanceId: string, description: string): Promise<Snapshot> {
-      return { id: "snap-1", description, status: "complete", size: 0, createdAt: new Date().toISOString() };
+    createSnapshot(_instanceId: string, description: string) {
+      return Effect.succeed({ id: "snap-1", description, status: "complete" as const, size: 0, createdAt: new Date().toISOString() });
     },
-    async listSnapshots(): Promise<Snapshot[]> {
-      return [];
+    listSnapshots() {
+      return Effect.succeed([] as Snapshot[]);
     },
-    async getSnapshot(id: string): Promise<Snapshot> {
-      return { id, description: id, status: "complete", size: 0, createdAt: new Date().toISOString() };
+    getSnapshot(id: string) {
+      return Effect.succeed({ id, description: id, status: "complete" as const, size: 0, createdAt: new Date().toISOString() });
     },
-    async deleteSnapshot(_id: string) {},
-    async waitForSnapshot(id: string, _timeoutMs?: number): Promise<Snapshot> {
-      return { id, description: id, status: "complete", size: 0, createdAt: new Date().toISOString() };
+    deleteSnapshot(_id: string) { return Effect.succeed(undefined as void); },
+    waitForSnapshot(id: string, _timeoutMs?: number) {
+      return Effect.succeed({ id, description: id, status: "complete" as const, size: 0, createdAt: new Date().toISOString() });
     },
     ...overrides,
   };
@@ -158,7 +159,7 @@ describe("VMPoolManager", () => {
         `INSERT INTO tasks (id, repo_url, context, status) VALUES ('task-1', 'https://github.com/test/repo', 'test', 'pending')`
       );
 
-      const vm = await pool.acquireVm("task-1");
+      const vm = await Effect.runPromise(pool.acquireVm("task-1"));
 
       expect(vm).toBeDefined();
       expect(vm.status).toBe("assigned");
@@ -179,7 +180,7 @@ describe("VMPoolManager", () => {
         `INSERT INTO tasks (id, repo_url, context, status) VALUES ('task-2', 'https://github.com/test/repo', 'test', 'pending')`
       );
 
-      const vm = await pool.acquireVm("task-2");
+      const vm = await Effect.runPromise(pool.acquireVm("task-2"));
 
       expect(vm.id).toBe("warm-1");
       expect(vm.status).toBe("assigned");
@@ -196,9 +197,9 @@ describe("VMPoolManager", () => {
         [now, now]
       );
 
-      await pool.releaseVm("vm-1");
+      await Effect.runPromise(pool.releaseVm("vm-1"));
 
-      const vm = pool.getVm("vm-1");
+      const vm = Effect.runSync(pool.getVm("vm-1"));
       expect(vm).toBeDefined();
       expect(vm!.status).toBe("ready");
       expect(vm!.task_id).toBeNull();
@@ -234,9 +235,9 @@ describe("VMPoolManager", () => {
         [now, now]
       );
 
-      await noIdlePool.releaseVm("vm-2");
+      await Effect.runPromise(noIdlePool.releaseVm("vm-2"));
 
-      const vm = noIdlePool.getVm("vm-2");
+      const vm = Effect.runSync(noIdlePool.getVm("vm-2"));
       expect(vm).toBeDefined();
       expect(vm!.status).toBe("destroyed");
     });
@@ -252,10 +253,10 @@ describe("VMPoolManager", () => {
         [pastTime, pastTime, pastTime]
       );
 
-      const reaped = await pool.reapIdleVms();
+      const reaped = await Effect.runPromise(pool.reapIdleVms());
 
       expect(reaped).toBe(1);
-      const vm = pool.getVm("idle-1");
+      const vm = Effect.runSync(pool.getVm("idle-1"));
       expect(vm).toBeDefined();
       expect(vm!.status).toBe("destroyed");
     });
@@ -269,10 +270,10 @@ describe("VMPoolManager", () => {
         [now, now, now]
       );
 
-      const reaped = await pool.reapIdleVms();
+      const reaped = await Effect.runPromise(pool.reapIdleVms());
 
       expect(reaped).toBe(0);
-      const vm = pool.getVm("fresh-1");
+      const vm = Effect.runSync(pool.getVm("fresh-1"));
       expect(vm!.status).toBe("ready");
     });
   });
@@ -304,7 +305,7 @@ describe("VMPoolManager", () => {
       // Wait a tick for fire-and-forget provisioning to complete
       await new Promise((r) => setTimeout(r, 100));
 
-      const vms = warmPool.listVms();
+      const vms = Effect.runSync(warmPool.listVms());
       // Should have provisioned VMs to meet minReady target
       const activeVms = vms.filter((v) => v.status !== "destroyed" && v.status !== "error");
       expect(activeVms.length).toBeGreaterThanOrEqual(1);
@@ -313,19 +314,19 @@ describe("VMPoolManager", () => {
     it("does not provision when at or above minReady", async () => {
       let provisionCount = 0;
       const countingProvider = createMockProvider({
-        async createInstance(opts: CreateInstanceOptions): Promise<Instance> {
+        createInstance(opts: CreateInstanceOptions) {
           provisionCount++;
           const id = opts.label ?? `mock-${provisionCount}`;
-          return {
+          return Effect.succeed({
             id,
             label: id,
             ip: `10.0.0.${provisionCount}`,
-            status: "active",
+            status: "active" as const,
             region: opts.region,
             plan: opts.plan,
             createdAt: new Date().toISOString(),
             sshPort: 22,
-          };
+          });
         },
       });
 
@@ -385,7 +386,7 @@ describe("VMPoolManager", () => {
         [now, now]
       );
 
-      const stats = pool.getPoolStats();
+      const stats = Effect.runSync(pool.getPoolStats());
 
       expect(stats.provisioning).toBe(1);
       expect(stats.ready).toBe(1);
