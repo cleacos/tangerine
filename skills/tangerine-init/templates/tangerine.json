@@ -1,0 +1,15 @@
+{
+  "project": {
+    "name": "",
+    "repo": "",
+    "default_branch": "main",
+    "image": "",
+    "setup": "",
+    "preview": {
+      "port": 3000,
+      "path": "/"
+    },
+    "test": "",
+    "env": {}
+  }
+}
