@@ -1,6 +1,9 @@
 {
   "name": "tangerine",
   "private": true,
+  "bin": {
+    "tangerine": "bin/tangerine"
+  },
   "workspaces": ["packages/*", "web"],
   "scripts": {
     "dev": "bun run --filter '*' dev",
