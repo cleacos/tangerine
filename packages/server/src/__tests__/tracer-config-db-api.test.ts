@@ -36,7 +36,7 @@ describe("tracer: config -> db -> api", () => {
 
     app.get("/api/tasks", (c) => {
       const status = c.req.query("status")
-      const rows = Effect.runSync(listTasks(db, status))
+      const rows = Effect.runSync(listTasks(db, status ? { status } : undefined))
       return c.json(rows.map(mapTaskRow))
     })
 
@@ -56,6 +56,7 @@ describe("tracer: config -> db -> api", () => {
       const id = crypto.randomUUID()
       const row = Effect.runSync(createTask(db, {
         id,
+        project_id: "test",
         source: "manual",
         repo_url: "https://github.com/test/repo",
         title: body.title,
@@ -79,6 +80,7 @@ describe("tracer: config -> db -> api", () => {
   it("GET /api/tasks returns tasks with camelCase field mapping", async () => {
     Effect.runSync(createTask(db, {
       id: "task-abc",
+      project_id: "test",
       source: "github",
       repo_url: "https://github.com/test/repo",
       title: "Fix the bug",
@@ -112,6 +114,7 @@ describe("tracer: config -> db -> api", () => {
   it("GET /api/tasks/:id returns a single task", async () => {
     Effect.runSync(createTask(db, {
       id: "task-single",
+      project_id: "test",
       source: "manual",
       repo_url: "https://github.com/test/repo",
       title: "Single task",
@@ -174,6 +177,7 @@ describe("tracer: config -> db -> api", () => {
   it("POST /api/tasks/:id/cancel updates task status", async () => {
     Effect.runSync(createTask(db, {
       id: "task-cancel",
+      project_id: "test",
       source: "manual",
       repo_url: "https://github.com/test/repo",
       title: "Cancel me",
@@ -209,12 +213,14 @@ describe("tracer: config -> db -> api", () => {
   it("GET /api/tasks filters by status query param", async () => {
     Effect.runSync(createTask(db, {
       id: "t-created",
+      project_id: "test",
       source: "manual",
       repo_url: "r",
       title: "Created",
     }))
     Effect.runSync(createTask(db, {
       id: "t-running",
+      project_id: "test",
       source: "manual",
       repo_url: "r",
       title: "Running",
@@ -239,6 +245,7 @@ describe("tracer: config -> db -> api", () => {
   it("mapTaskRow converts all snake_case fields to camelCase", () => {
     const row: TaskRow = {
       id: "test-id",
+      project_id: "test",
       source: "github",
       source_id: "owner/repo#1",
       source_url: "https://github.com/owner/repo/issues/1",

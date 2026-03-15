@@ -31,6 +31,7 @@ describe("tracer: task lifecycle", () => {
     const task = Effect.runSync(createTask(db, {
       id: "task-lifecycle",
       source: "github",
+      project_id: "test",
       repo_url: "https://github.com/test/repo",
       title: "Implement feature X",
       description: "Full lifecycle test",
@@ -130,6 +131,7 @@ describe("tracer: task lifecycle", () => {
     Effect.runSync(createTask(db, {
       id: "task-cancel",
       source: "manual",
+      project_id: "test",
       repo_url: "https://github.com/test/repo",
       title: "Task to cancel",
     }))
@@ -162,6 +164,7 @@ describe("tracer: task lifecycle", () => {
     Effect.runSync(createTask(db, {
       id: "task-fail",
       source: "github",
+      project_id: "test",
       repo_url: "https://github.com/test/repo",
       title: "Task that fails",
     }))
@@ -185,9 +188,9 @@ describe("tracer: task lifecycle", () => {
   })
 
   it("tracks multiple tasks with different statuses", () => {
-    Effect.runSync(createTask(db, { id: "t1", source: "manual", repo_url: "r", title: "Task 1" }))
-    Effect.runSync(createTask(db, { id: "t2", source: "github", repo_url: "r", title: "Task 2" }))
-    Effect.runSync(createTask(db, { id: "t3", source: "manual", repo_url: "r", title: "Task 3" }))
+    Effect.runSync(createTask(db, { id: "t1", source: "manual", project_id: "test", repo_url: "r", title: "Task 1" }))
+    Effect.runSync(createTask(db, { id: "t2", source: "github", project_id: "test", repo_url: "r", title: "Task 2" }))
+    Effect.runSync(createTask(db, { id: "t3", source: "manual", project_id: "test", repo_url: "r", title: "Task 3" }))
 
     Effect.runSync(updateTaskStatus(db, "t1", "running"))
     Effect.runSync(updateTaskStatus(db, "t2", "done"))
@@ -203,8 +206,8 @@ describe("tracer: task lifecycle", () => {
   })
 
   it("session logs are isolated per task", () => {
-    Effect.runSync(createTask(db, { id: "ta", source: "manual", repo_url: "r", title: "A" }))
-    Effect.runSync(createTask(db, { id: "tb", source: "manual", repo_url: "r", title: "B" }))
+    Effect.runSync(createTask(db, { id: "ta", source: "manual", project_id: "test", repo_url: "r", title: "A" }))
+    Effect.runSync(createTask(db, { id: "tb", source: "manual", project_id: "test", repo_url: "r", title: "B" }))
 
     Effect.runSync(insertSessionLog(db, { task_id: "ta", role: "user", content: "Log for A" }))
     Effect.runSync(insertSessionLog(db, { task_id: "tb", role: "user", content: "Log for B" }))

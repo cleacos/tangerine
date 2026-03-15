@@ -123,6 +123,7 @@ export function makeTask(overrides?: Partial<Task>): Task {
   const now = new Date().toISOString()
   return {
     id: crypto.randomUUID(),
+    projectId: "test",
     source: "manual",
     sourceId: null,
     sourceUrl: null,

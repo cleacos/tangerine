@@ -4,6 +4,7 @@ export type TaskSource = "github" | "linear" | "manual"
 
 export interface Task {
   id: string
+  projectId: string
   source: TaskSource
   sourceId: string | null
   sourceUrl: string | null

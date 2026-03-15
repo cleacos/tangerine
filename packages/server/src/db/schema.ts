@@ -1,6 +1,7 @@
 export const SCHEMA = `
   CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
     source TEXT NOT NULL,
     source_id TEXT,
     source_url TEXT,
@@ -23,6 +24,7 @@ export const SCHEMA = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+  CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status);
   CREATE INDEX IF NOT EXISTS idx_tasks_vm_id ON tasks(vm_id);
 
   CREATE TABLE IF NOT EXISTS vms (

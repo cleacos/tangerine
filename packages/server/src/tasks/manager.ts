@@ -20,14 +20,14 @@ const log = createLogger("tasks")
 export type TaskSource = "github" | "manual" | "api"
 
 export interface TaskManagerDeps {
-  insertTask(task: Pick<TaskRow, "id" | "source" | "repo_url" | "title"> & Partial<Pick<TaskRow, "source_id" | "source_url" | "description" | "user_id" | "branch">>): Effect.Effect<TaskRow, Error>
+  insertTask(task: Pick<TaskRow, "id" | "project_id" | "source" | "repo_url" | "title"> & Partial<Pick<TaskRow, "source_id" | "source_url" | "description" | "user_id" | "branch">>): Effect.Effect<TaskRow, Error>
   updateTask(taskId: string, updates: Partial<Omit<TaskRow, "id">>): Effect.Effect<TaskRow | null, Error>
   getTask(taskId: string): Effect.Effect<TaskRow | null, Error>
-  listTasks(filter?: { status?: string }): Effect.Effect<TaskRow[], Error>
+  listTasks(filter?: { status?: string; projectId?: string }): Effect.Effect<TaskRow[], Error>
   lifecycleDeps: LifecycleDeps
   cleanupDeps: CleanupDeps
   retryDeps: RetryDeps
-  projectConfig: ProjectConfig
+  getProjectConfig(projectId: string): ProjectConfig | undefined
   credentialConfig: CredentialConfig
   abortAgent(opencodePort: number, sessionId: string): Effect.Effect<void, AgentError>
 }
@@ -39,6 +39,7 @@ export function createTask(
   deps: TaskManagerDeps,
   params: {
     source: TaskSource
+    projectId: string
     sourceId?: string
     sourceUrl?: string
     title: string
@@ -46,23 +47,29 @@ export function createTask(
   },
 ): Effect.Effect<TaskRow, Error> {
   return Effect.gen(function* () {
+    const projectConfig = deps.getProjectConfig(params.projectId)
+    if (!projectConfig) {
+      return yield* Effect.fail(new Error(`Unknown project: ${params.projectId}`))
+    }
+
     const id = crypto.randomUUID()
 
     const task = yield* deps.insertTask({
       id,
+      project_id: params.projectId,
       source: params.source,
       source_id: params.sourceId ?? null,
       source_url: params.sourceUrl ?? null,
-      repo_url: deps.projectConfig.repo,
+      repo_url: projectConfig.repo,
       title: params.title,
       description: params.description ?? null,
     })
 
-    log.info("Task created", { taskId: id, source: params.source, title: params.title })
+    log.info("Task created", { taskId: id, projectId: params.projectId, source: params.source, title: params.title })
 
     // Kick off provisioning in a background fiber so task creation is non-blocking
     yield* Effect.fork(
-      startSessionWithRetry(task, deps.projectConfig, deps.credentialConfig, deps.lifecycleDeps, deps.retryDeps)
+      startSessionWithRetry(task, projectConfig, deps.credentialConfig, deps.lifecycleDeps, deps.retryDeps)
     )
 
     return task

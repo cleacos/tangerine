@@ -9,9 +9,10 @@ export function taskRoutes(deps: AppDeps): Hono {
   const app = new Hono()
 
   app.get("/", (c) => {
-    const status = c.req.query("status")
+    const status = c.req.query("status") || undefined
+    const projectId = c.req.query("project") || undefined
     return runEffect(c,
-      listTasks(deps.db, status).pipe(
+      listTasks(deps.db, { status, projectId }).pipe(
         Effect.map(rows => rows.map(mapTaskRow))
       )
     )
@@ -28,12 +29,18 @@ export function taskRoutes(deps: AppDeps): Hono {
   })
 
   app.post("/", async (c) => {
-    const body = await c.req.json<{ title?: string; description?: string }>()
+    const body = await c.req.json<{ projectId?: string; title?: string; description?: string }>()
     if (!body.title) {
       return c.json({ error: "title is required" }, 400)
     }
+    // Default to first project if not specified
+    const projectId = body.projectId || deps.config.config.projects[0]!.name
+    const project = deps.config.config.projects.find((p) => p.name === projectId)
+    if (!project) {
+      return c.json({ error: `Unknown project: ${projectId}` }, 400)
+    }
     return runEffect(c,
-      deps.taskManager.createTask("manual", body.title, body.description).pipe(
+      deps.taskManager.createTask("manual", projectId, body.title, body.description).pipe(
         Effect.map(mapTaskRow)
       ),
       { status: 201 }

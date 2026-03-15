@@ -100,6 +100,7 @@ function createTestDb(): Database {
 
     CREATE TABLE IF NOT EXISTS tasks (
       id            TEXT PRIMARY KEY,
+      project_id    TEXT NOT NULL DEFAULT 'test',
       slug          TEXT UNIQUE,
       repo_url      TEXT NOT NULL,
       context       TEXT NOT NULL,

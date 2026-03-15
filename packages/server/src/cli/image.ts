@@ -36,9 +36,10 @@ Subcommands:
 
 async function buildImageCmd(): Promise<void> {
   const config = loadConfig()
-  const name = config.config.project.image
+  const project = config.config.projects[0]!
+  const name = project.image
 
-  log.info("Building image", { name, project: config.config.project.name })
+  log.info("Building image", { name, project: project.name })
 
   try {
     const { buildImage: build } = await import("../image/build.ts")

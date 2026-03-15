@@ -1,4 +1,4 @@
-import type { Task, PoolStats } from "@tangerine/shared"
+import type { Task, PoolStats, ProjectConfig } from "@tangerine/shared"
 
 const BASE = ""
 
@@ -19,11 +19,6 @@ export interface DiffData {
   files: DiffFile[]
 }
 
-export interface ProjectConfig {
-  name: string
-  [key: string]: unknown
-}
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -41,8 +36,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function fetchTasks(status?: string): Promise<Task[]> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : ""
+export async function fetchProjects(): Promise<ProjectConfig[]> {
+  return request<ProjectConfig[]>("/api/projects")
+}
+
+export async function fetchTasks(filter?: { status?: string; project?: string }): Promise<Task[]> {
+  const params = new URLSearchParams()
+  if (filter?.status) params.set("status", filter.status)
+  if (filter?.project) params.set("project", filter.project)
+  const query = params.toString() ? `?${params}` : ""
   return request<Task[]>(`/api/tasks${query}`)
 }
 
@@ -51,6 +53,7 @@ export async function fetchTask(id: string): Promise<Task> {
 }
 
 export async function createTask(data: {
+  projectId: string
   title: string
   description?: string
 }): Promise<Task> {
@@ -93,8 +96,4 @@ export async function fetchPool(): Promise<PoolStats> {
 
 export async function fetchHealth(): Promise<{ status: string; uptime: number }> {
   return request<{ status: string; uptime: number }>("/api/health")
-}
-
-export async function fetchProject(): Promise<ProjectConfig> {
-  return request<ProjectConfig>("/api/project")
 }

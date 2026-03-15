@@ -40,6 +40,7 @@ describe("tasks", () => {
     const task = Effect.runSync(createTask(db, {
       id: "task-1",
       source: "manual",
+      project_id: "test",
       repo_url: "https://github.com/test/repo",
       title: "Test task",
     }))
@@ -69,6 +70,7 @@ describe("tasks", () => {
     Effect.runSync(createTask(db, {
       id: "task-2",
       source: "github",
+      project_id: "test",
       repo_url: "https://github.com/test/repo",
       title: "Status test",
     }))
@@ -82,6 +84,7 @@ describe("tasks", () => {
     Effect.runSync(createTask(db, {
       id: "task-3",
       source: "manual",
+      project_id: "test",
       repo_url: "https://github.com/test/repo",
       title: "Update test",
     }))
@@ -97,18 +100,18 @@ describe("tasks", () => {
   })
 
   test("list tasks by status filter", () => {
-    Effect.runSync(createTask(db, { id: "t-a", source: "manual", repo_url: "r", title: "A" }))
-    Effect.runSync(createTask(db, { id: "t-b", source: "manual", repo_url: "r", title: "B" }))
+    Effect.runSync(createTask(db, { id: "t-a", source: "manual", project_id: "test", repo_url: "r", title: "A" }))
+    Effect.runSync(createTask(db, { id: "t-b", source: "manual", project_id: "test", repo_url: "r", title: "B" }))
     Effect.runSync(updateTaskStatus(db, "t-b", "running"))
 
     const all = Effect.runSync(listTasks(db))
     expect(all.length).toBe(2)
 
-    const created = Effect.runSync(listTasks(db, "created"))
+    const created = Effect.runSync(listTasks(db, { status: "created" }))
     expect(created.length).toBe(1)
     expect(created[0]!.id).toBe("t-a")
 
-    const running = Effect.runSync(listTasks(db, "running"))
+    const running = Effect.runSync(listTasks(db, { status: "running" }))
     expect(running.length).toBe(1)
     expect(running[0]!.id).toBe("t-b")
   })
@@ -155,7 +158,7 @@ describe("vms", () => {
   })
 
   test("assign and release VM", () => {
-    Effect.runSync(createTask(db, { id: "task-x", source: "manual", repo_url: "r", title: "X" }))
+    Effect.runSync(createTask(db, { id: "task-x", source: "manual", project_id: "test", repo_url: "r", title: "X" }))
     Effect.runSync(createVm(db, {
       id: "vm-3",
       label: "vm-three",
@@ -198,7 +201,7 @@ describe("session logs", () => {
   })
 
   test("insert and retrieve session logs", () => {
-    Effect.runSync(createTask(db, { id: "task-log", source: "manual", repo_url: "r", title: "Log test" }))
+    Effect.runSync(createTask(db, { id: "task-log", source: "manual", project_id: "test", repo_url: "r", title: "Log test" }))
 
     Effect.runSync(insertSessionLog(db, { task_id: "task-log", role: "user", content: "Hello" }))
     Effect.runSync(insertSessionLog(db, { task_id: "task-log", role: "assistant", content: "Hi there" }))
@@ -212,7 +215,7 @@ describe("session logs", () => {
   })
 
   test("returns empty array for task with no logs", () => {
-    Effect.runSync(createTask(db, { id: "task-empty", source: "manual", repo_url: "r", title: "Empty" }))
+    Effect.runSync(createTask(db, { id: "task-empty", source: "manual", project_id: "test", repo_url: "r", title: "Empty" }))
     const logs = Effect.runSync(getSessionLogs(db, "task-empty"))
     expect(logs.length).toBe(0)
   })

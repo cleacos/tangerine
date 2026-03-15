@@ -27,7 +27,7 @@ interface TaggedError { _tag: string; message?: string }
 export interface AppDeps {
   db: Database
   taskManager: {
-    createTask(source: string, title: string, description?: string): Effect.Effect<TaskRow, TaggedError>
+    createTask(source: string, projectId: string, title: string, description?: string): Effect.Effect<TaskRow, TaggedError>
     cancelTask(taskId: string): Effect.Effect<void, TaggedError>
     completeTask(taskId: string): Effect.Effect<void, TaggedError>
     sendPrompt(taskId: string, text: string): Effect.Effect<void, TaggedError>
@@ -51,7 +51,7 @@ export function createApp(deps: AppDeps): { app: Hono; websocket: WsSetup["webso
   app.route("/api", systemRoutes(deps))
   app.route("/api/tasks", taskRoutes(deps))
   app.route("/api/tasks", sessionRoutes(deps))
-  app.route("/api/project", projectRoutes(deps))
+  app.route("/api/projects", projectRoutes(deps))
   app.route("/preview", previewRoutes(deps))
 
   const { routes: wsApp, websocket } = wsRoutes(deps)

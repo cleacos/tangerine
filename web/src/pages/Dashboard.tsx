@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react"
-import type { TaskStatus, PoolStats } from "@tangerine/shared"
+import type { TaskStatus, PoolStats, ProjectConfig } from "@tangerine/shared"
 import { useTasks } from "../hooks/useTasks"
 import { TaskList } from "../components/TaskList"
 import { CreateTaskModal } from "../components/CreateTaskModal"
-import { fetchPool, fetchProject, type ProjectConfig } from "../lib/api"
+import { fetchPool, fetchProjects } from "../lib/api"
 
 type FilterTab = "all" | TaskStatus
 
@@ -19,10 +19,14 @@ export function Dashboard() {
   const [filter, setFilter] = useState<FilterTab>("all")
   const [showCreate, setShowCreate] = useState(false)
   const [pool, setPool] = useState<PoolStats | null>(null)
-  const [project, setProject] = useState<ProjectConfig | null>(null)
+  const [projects, setProjects] = useState<ProjectConfig[]>([])
+  const [selectedProject, setSelectedProject] = useState<string | undefined>(undefined)
 
   const statusFilter = filter === "all" ? undefined : filter
-  const { tasks, loading, error, refetch } = useTasks(statusFilter)
+  const { tasks, loading, error, refetch } = useTasks({
+    status: statusFilter,
+    project: selectedProject,
+  })
 
   const loadPool = useCallback(async () => {
     try {
@@ -40,10 +44,12 @@ export function Dashboard() {
   }, [loadPool])
 
   useEffect(() => {
-    fetchProject()
-      .then(setProject)
+    fetchProjects()
+      .then((data) => {
+        setProjects(data)
+      })
       .catch(() => {
-        // Project config may not be available
+        // Projects may not be available
       })
   }, [])
 
@@ -51,10 +57,24 @@ export function Dashboard() {
     <div className="mx-auto max-w-4xl p-6">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-neutral-100">Tasks</h1>
-          {project?.name && (
-            <p className="mt-0.5 text-sm text-neutral-500">{project.name}</p>
+          {projects.length > 1 && (
+            <select
+              value={selectedProject ?? ""}
+              onChange={(e) => setSelectedProject(e.target.value || undefined)}
+              className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-sm text-neutral-100 outline-none focus:border-tangerine"
+            >
+              <option value="">All projects</option>
+              {projects.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {projects.length === 1 && (
+            <span className="text-sm text-neutral-500">{projects[0]!.name}</span>
           )}
         </div>
 
@@ -117,6 +137,8 @@ export function Dashboard() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreated={refetch}
+        projects={projects}
+        defaultProject={selectedProject}
       />
     </div>
   )

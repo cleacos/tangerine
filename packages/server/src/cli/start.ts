@@ -8,6 +8,7 @@ import { VMPoolManager } from "../vm/pool"
 import { createApp } from "../api/app"
 import type { AppDeps } from "../api/app"
 import { DEFAULT_API_PORT } from "@tangerine/shared"
+import { TANGERINE_HOME } from "../config"
 
 const log = createLogger("cli")
 
@@ -16,7 +17,8 @@ export async function start(): Promise<void> {
 
   try {
     const config = loadConfig()
-    log.info("Config loaded", { project: config.config.project.name })
+    const projectNames = config.config.projects.map((p) => p.name)
+    log.info("Config loaded", { projects: projectNames, home: TANGERINE_HOME })
 
     const db = getDb()
     log.info("Database initialized")
@@ -44,13 +46,16 @@ export async function start(): Promise<void> {
 
     log.info("Server starting", { port })
 
+    const hostname = process.env.HOST ?? "0.0.0.0"
+
     Bun.serve({
+      hostname,
       port,
       fetch: app.fetch,
       websocket,
     })
 
-    startSpan.end({ port, project: config.config.project.name })
+    startSpan.end({ port, projects: projectNames })
 
     const shutdown = async (signal: string) => {
       log.info("Shutdown signal received", { signal })

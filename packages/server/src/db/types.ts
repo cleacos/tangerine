@@ -17,6 +17,7 @@ export interface VmRow {
 
 export interface TaskRow {
   id: string
+  project_id: string
   source: string
   source_id: string | null
   source_url: string | null

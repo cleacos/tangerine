@@ -5,6 +5,7 @@ import type { TaskRow } from "../db/types"
 export function mapTaskRow(row: TaskRow): Task {
   return {
     id: row.id,
+    projectId: row.project_id,
     source: row.source as TaskSource,
     sourceId: row.source_id,
     sourceUrl: row.source_url,

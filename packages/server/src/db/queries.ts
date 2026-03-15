@@ -6,16 +6,17 @@ import type { VmRow, TaskRow, SessionLogRow, ImageRow } from "./types"
 
 export function createTask(
   db: Database,
-  task: Pick<TaskRow, "id" | "source" | "repo_url" | "title"> &
+  task: Pick<TaskRow, "id" | "project_id" | "source" | "repo_url" | "title"> &
     Partial<Pick<TaskRow, "source_id" | "source_url" | "description" | "user_id" | "branch">>
 ): Effect.Effect<TaskRow, Error> {
   return Effect.sync(() => {
     const stmt = db.prepare(`
-      INSERT INTO tasks (id, source, source_id, source_url, repo_url, title, description, user_id, branch)
-      VALUES ($id, $source, $source_id, $source_url, $repo_url, $title, $description, $user_id, $branch)
+      INSERT INTO tasks (id, project_id, source, source_id, source_url, repo_url, title, description, user_id, branch)
+      VALUES ($id, $project_id, $source, $source_id, $source_url, $repo_url, $title, $description, $user_id, $branch)
     `)
     stmt.run({
       $id: task.id,
+      $project_id: task.project_id,
       $source: task.source,
       $source_id: task.source_id ?? null,
       $source_url: task.source_url ?? null,
@@ -35,12 +36,20 @@ export function getTask(db: Database, id: string): Effect.Effect<TaskRow | null,
   })
 }
 
-export function listTasks(db: Database, status?: string): Effect.Effect<TaskRow[], Error> {
+export function listTasks(db: Database, filter?: { status?: string; projectId?: string }): Effect.Effect<TaskRow[], Error> {
   return Effect.sync(() => {
-    if (status) {
-      return db.prepare("SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC").all(status) as TaskRow[]
+    const conditions: string[] = []
+    const params: Record<string, string> = {}
+    if (filter?.status) {
+      conditions.push("status = $status")
+      params.$status = filter.status
     }
-    return db.prepare("SELECT * FROM tasks ORDER BY created_at DESC").all() as TaskRow[]
+    if (filter?.projectId) {
+      conditions.push("project_id = $project_id")
+      params.$project_id = filter.projectId
+    }
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : ""
+    return db.prepare(`SELECT * FROM tasks${where} ORDER BY created_at DESC`).all(params) as TaskRow[]
   })
 }
 

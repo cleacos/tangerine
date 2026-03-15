@@ -11,16 +11,16 @@ interface UseTasksResult {
   refetch: () => void
 }
 
-export function useTasks(status?: string): UseTasksResult {
+export function useTasks(filter?: { status?: string; project?: string }): UseTasksResult {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const statusRef = useRef(status)
-  statusRef.current = status
+  const filterRef = useRef(filter)
+  filterRef.current = filter
 
   const refetch = useCallback(async () => {
     try {
-      const data = await fetchTasks(statusRef.current)
+      const data = await fetchTasks(filterRef.current)
       setTasks(data)
       setError(null)
     } catch (err) {
@@ -36,7 +36,7 @@ export function useTasks(status?: string): UseTasksResult {
 
     const interval = setInterval(refetch, POLL_INTERVAL)
     return () => clearInterval(interval)
-  }, [status, refetch])
+  }, [filter?.status, filter?.project, refetch])
 
   return { tasks, loading, error, refetch }
 }

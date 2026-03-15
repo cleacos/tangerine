@@ -16,6 +16,7 @@ Subcommands:
   create  Create a task manually
 
 Options for create:
+  --project <name>         Project name (defaults to first project)
   --title <title>          Task title (required)
   --description <desc>     Task description (optional)
 `)
@@ -34,6 +35,7 @@ Options for create:
 
 async function createTask(argv: string[]): Promise<void> {
   const parsed = parseArgs(argv, {
+    project: { alias: "p" },
     title: { alias: "t", required: true },
     description: { alias: "d" },
   })
@@ -42,6 +44,14 @@ async function createTask(argv: string[]): Promise<void> {
   const description = parsed.flags["description"]
 
   const config = loadConfig()
+  const projectId = parsed.flags["project"] || config.config.projects[0]!.name
+  const project = config.config.projects.find((p) => p.name === projectId)
+  if (!project) {
+    console.error(`Unknown project: ${projectId}`)
+    console.error(`Available projects: ${config.config.projects.map((p) => p.name).join(", ")}`)
+    process.exit(1)
+  }
+
   const db = getDb()
 
   const { createTask: dbCreateTask } = await import("../db/queries.ts")
@@ -50,12 +60,13 @@ async function createTask(argv: string[]): Promise<void> {
   const { Effect } = await import("effect")
   const task = Effect.runSync(dbCreateTask(db, {
     id,
+    project_id: projectId,
     source: "manual",
-    repo_url: config.config.project.repo,
+    repo_url: project.repo,
     title,
     description,
   }))
 
-  console.log(`Task created: ${task.id}`)
-  log.info("Task created via CLI", { taskId: task.id, title })
+  console.log(`Task created: ${task.id} (project: ${projectId})`)
+  log.info("Task created via CLI", { taskId: task.id, projectId, title })
 }

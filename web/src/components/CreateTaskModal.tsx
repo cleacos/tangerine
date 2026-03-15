@@ -1,17 +1,27 @@
 import { useState, useEffect, useCallback, type FormEvent } from "react"
+import type { ProjectConfig } from "@tangerine/shared"
 import { createTask } from "../lib/api"
 
 interface CreateTaskModalProps {
   open: boolean
   onClose: () => void
   onCreated: () => void
+  projects: ProjectConfig[]
+  defaultProject?: string
 }
 
-export function CreateTaskModal({ open, onClose, onCreated }: CreateTaskModalProps) {
+export function CreateTaskModal({ open, onClose, onCreated, projects, defaultProject }: CreateTaskModalProps) {
+  const [projectId, setProjectId] = useState(defaultProject || "")
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Sync default project when it changes
+  useEffect(() => {
+    if (defaultProject) setProjectId(defaultProject)
+    else if (projects.length > 0 && !projectId) setProjectId(projects[0]!.name)
+  }, [defaultProject, projects, projectId])
 
   // Close on Escape
   useEffect(() => {
@@ -26,12 +36,13 @@ export function CreateTaskModal({ open, onClose, onCreated }: CreateTaskModalPro
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault()
-      if (!title.trim()) return
+      if (!title.trim() || !projectId) return
 
       setSubmitting(true)
       setError(null)
       try {
         await createTask({
+          projectId,
           title: title.trim(),
           description: description.trim() || undefined,
         })
@@ -45,7 +56,7 @@ export function CreateTaskModal({ open, onClose, onCreated }: CreateTaskModalPro
         setSubmitting(false)
       }
     },
-    [title, description, onCreated, onClose],
+    [projectId, title, description, onCreated, onClose],
   )
 
   if (!open) return null
@@ -61,6 +72,26 @@ export function CreateTaskModal({ open, onClose, onCreated }: CreateTaskModalPro
         <h2 className="mb-4 text-lg font-semibold text-neutral-100">Create Task</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {projects.length > 1 && (
+            <div>
+              <label htmlFor="project" className="mb-1 block text-xs text-neutral-400">
+                Project
+              </label>
+              <select
+                id="project"
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-tangerine"
+              >
+                {projects.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label htmlFor="title" className="mb-1 block text-xs text-neutral-400">
               Title
@@ -104,7 +135,7 @@ export function CreateTaskModal({ open, onClose, onCreated }: CreateTaskModalPro
             </button>
             <button
               type="submit"
-              disabled={submitting || !title.trim()}
+              disabled={submitting || !title.trim() || !projectId}
               className="rounded-lg bg-tangerine px-4 py-2 text-sm font-medium text-white transition hover:bg-tangerine-light disabled:opacity-50"
             >
               {submitting ? "Creating..." : "Create"}

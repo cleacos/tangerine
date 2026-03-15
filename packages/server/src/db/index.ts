@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite"
+import { join } from "path"
+import { TANGERINE_HOME } from "../config"
 import { SCHEMA } from "./schema"
 
 let instance: Database | null = null
@@ -7,7 +9,7 @@ let instance: Database | null = null
 export function getDb(path?: string): Database {
   if (instance) return instance
 
-  const dbPath = path ?? "tangerine.db"
+  const dbPath = path ?? join(TANGERINE_HOME, "tangerine.db")
   const db = new Database(dbPath)
 
   // WAL mode for better concurrent read performance

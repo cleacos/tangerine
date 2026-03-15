@@ -1,8 +1,10 @@
-import { existsSync, readFileSync } from "fs"
+import { existsSync, readFileSync, mkdirSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { tangerineConfigSchema } from "@tangerine/shared"
-import type { TangerineConfig } from "@tangerine/shared"
+import type { TangerineConfig, ProjectConfig } from "@tangerine/shared"
+
+export const TANGERINE_HOME = join(homedir(), "tangerine")
 
 /** Path to OpenCode's credential store on the host */
 export const OPENCODE_AUTH_PATH = join(homedir(), ".local", "share", "opencode", "auth.json")
@@ -27,24 +29,33 @@ function readConfigFile(path: string): Record<string, unknown> | null {
   return JSON.parse(raw) as Record<string, unknown>
 }
 
+/** Resolve a project config by name */
+export function getProjectConfig(config: TangerineConfig, projectId: string): ProjectConfig | undefined {
+  return config.projects.find((p) => p.name === projectId)
+}
+
 /**
- * Loads config by merging project-local .tangerine/config.json over global ~/.config/tangerine/config.json,
- * validates with Zod, and resolves credentials.
- *
- * LLM credentials: prefers OpenCode's auth.json (supports API keys + OAuth).
- * Falls back to ANTHROPIC_API_KEY env var. At least one must be available.
+ * Loads config from ~/tangerine/config.json (primary) with fallback to
+ * legacy locations (~/.config/tangerine/config.json, .tangerine/config.json).
+ * Validates with Zod and resolves credentials.
  */
 export function loadConfig(): AppConfig {
-  const globalPath = join(homedir(), ".config", "tangerine", "config.json")
-  const projectPath = join(process.cwd(), ".tangerine", "config.json")
+  // Ensure ~/tangerine/ exists
+  mkdirSync(TANGERINE_HOME, { recursive: true })
 
-  const globalConfig = readConfigFile(globalPath) ?? {}
-  const projectConfig = readConfigFile(projectPath) ?? {}
+  const centralPath = join(TANGERINE_HOME, "config.json")
+  const legacyGlobalPath = join(homedir(), ".config", "tangerine", "config.json")
+  const legacyProjectPath = join(process.cwd(), ".tangerine", "config.json")
 
-  // Project config overrides global config
-  const merged = { ...globalConfig, ...projectConfig }
+  // Try central config first, fall back to legacy locations
+  let raw: Record<string, unknown> | null = readConfigFile(centralPath)
+  if (!raw) {
+    const legacyGlobal = readConfigFile(legacyGlobalPath) ?? {}
+    const legacyProject = readConfigFile(legacyProjectPath) ?? {}
+    raw = { ...legacyGlobal, ...legacyProject }
+  }
 
-  const config = tangerineConfigSchema.parse(merged)
+  const config = tangerineConfigSchema.parse(raw)
 
   const opencodeAuthPath = existsSync(OPENCODE_AUTH_PATH) ? OPENCODE_AUTH_PATH : null
   const anthropicApiKey = process.env["ANTHROPIC_API_KEY"] ?? null
