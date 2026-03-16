@@ -24,8 +24,6 @@ export function Topbar() {
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const isRuns = location.pathname === "/" || location.pathname.startsWith("/tasks")
-  const isFiles = location.pathname === "/files"
-  const isSettings = location.pathname === "/settings"
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -147,22 +145,6 @@ export function Topbar() {
             }`}
           >
             Runs
-          </Link>
-          <Link
-            to="/files"
-            className={`rounded-md px-3 py-1.5 text-[13px] ${
-              isFiles ? "bg-[#f5f5f5] font-medium text-[#0a0a0a]" : "text-[#737373] hover:text-[#0a0a0a]"
-            }`}
-          >
-            Files
-          </Link>
-          <Link
-            to="/settings"
-            className={`rounded-md px-3 py-1.5 text-[13px] ${
-              isSettings ? "bg-[#f5f5f5] font-medium text-[#0a0a0a]" : "text-[#737373] hover:text-[#0a0a0a]"
-            }`}
-          >
-            Settings
           </Link>
         </nav>
 
