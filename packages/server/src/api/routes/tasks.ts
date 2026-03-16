@@ -12,8 +12,9 @@ export function taskRoutes(deps: AppDeps): Hono {
   app.get("/", (c) => {
     const status = c.req.query("status") || undefined
     const projectId = c.req.query("project") || undefined
+    const search = c.req.query("search") || undefined
     return runEffect(c,
-      listTasks(deps.db, { status, projectId }).pipe(
+      listTasks(deps.db, { status, projectId, search }).pipe(
         Effect.map(rows => rows.map(mapTaskRow))
       )
     )

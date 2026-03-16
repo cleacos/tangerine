@@ -33,10 +33,12 @@ function formatTime(timestamp: string): string {
 
 interface TasksSidebarProps {
   tasks: Task[]
+  searchQuery: string
+  onSearchChange: (query: string) => void
   onNewAgent: () => void
 }
 
-export function TasksSidebar({ tasks, onNewAgent }: TasksSidebarProps) {
+export function TasksSidebar({ tasks, searchQuery, onSearchChange, onNewAgent }: TasksSidebarProps) {
   const { id: activeId } = useParams<{ id: string }>()
 
   return (
@@ -52,6 +54,25 @@ export function TasksSidebar({ tasks, onNewAgent }: TasksSidebarProps) {
           </svg>
           <span className="text-[13px] font-medium">New Agent</span>
         </button>
+        <div className="flex h-[34px] items-center gap-2 rounded-md border border-[#e4e4e4] bg-[#fafafa] px-2.5">
+          <svg className="h-3.5 w-3.5 shrink-0 text-[#777]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search tasks..."
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-[#0a0a0a] placeholder-[#999] outline-none"
+          />
+          {searchQuery && (
+            <button onClick={() => onSearchChange("")} className="shrink-0 text-[#999] hover:text-[#555]">
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Divider */}

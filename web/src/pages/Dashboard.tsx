@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom"
 import { useProject } from "../context/ProjectContext"
-import { useTasks } from "../hooks/useTasks"
+import { useTaskSearch } from "../hooks/useTaskSearch"
 import { TasksSidebar } from "../components/TasksSidebar"
 import { NewAgentForm } from "../components/NewAgentForm"
 import { createTask } from "../lib/api"
@@ -8,7 +8,7 @@ import { createTask } from "../lib/api"
 export function Dashboard() {
   const navigate = useNavigate()
   const { current } = useProject()
-  const { tasks, refetch } = useTasks(current ? { project: current.name } : undefined)
+  const { query, setQuery, tasks, refetch } = useTaskSearch(current?.name)
 
   const handleNewAgent = async (data: { projectId: string; title: string; description?: string }) => {
     try {
@@ -24,6 +24,8 @@ export function Dashboard() {
     <div className="flex h-full">
       <TasksSidebar
         tasks={tasks}
+        searchQuery={query}
+        onSearchChange={setQuery}
         onNewAgent={() => {/* already on new agent screen */}}
       />
       <NewAgentForm onSubmit={handleNewAgent} />

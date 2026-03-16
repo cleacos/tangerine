@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom"
 import type { Task } from "@tangerine/shared"
 import { fetchTask } from "../lib/api"
 import { useSession } from "../hooks/useSession"
-import { useTasks } from "../hooks/useTasks"
+import { useTaskSearch } from "../hooks/useTaskSearch"
 import { useProject } from "../context/ProjectContext"
 import { TasksSidebar } from "../components/TasksSidebar"
 import { ChatPanel } from "../components/ChatPanel"
@@ -18,7 +18,7 @@ export function TaskDetail() {
   const [showActivity, setShowActivity] = useState(true)
 
   const session = useSession(id ?? "")
-  const { tasks } = useTasks(current ? { project: current.name } : undefined)
+  const { query, setQuery, tasks } = useTaskSearch(current?.name)
 
   useEffect(() => {
     if (!id) return
@@ -54,7 +54,7 @@ export function TaskDetail() {
   if (loading) {
     return (
       <div className="flex h-full">
-        <TasksSidebar tasks={tasks} onNewAgent={() => navigate("/")} />
+        <TasksSidebar tasks={tasks} searchQuery={query} onSearchChange={setQuery} onNewAgent={() => navigate("/")} />
         <div className="flex flex-1 items-center justify-center text-[13px] text-[#737373]">
           Loading...
         </div>
@@ -65,7 +65,7 @@ export function TaskDetail() {
   if (!task) {
     return (
       <div className="flex h-full">
-        <TasksSidebar tasks={tasks} onNewAgent={() => navigate("/")} />
+        <TasksSidebar tasks={tasks} searchQuery={query} onSearchChange={setQuery} onNewAgent={() => navigate("/")} />
         <div className="flex flex-1 items-center justify-center text-[13px] text-[#737373]">
           Task not found
         </div>
@@ -75,7 +75,7 @@ export function TaskDetail() {
 
   return (
     <div className="flex h-full">
-      <TasksSidebar tasks={tasks} onNewAgent={() => navigate("/")} />
+      <TasksSidebar tasks={tasks} searchQuery={query} onSearchChange={setQuery} onNewAgent={() => navigate("/")} />
 
       {/* Chat panel */}
       <div className="flex min-w-0 flex-1 flex-col">

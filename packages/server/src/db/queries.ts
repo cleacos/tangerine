@@ -44,7 +44,7 @@ export function getTask(db: Database, id: string): Effect.Effect<TaskRow | null,
   })
 }
 
-export function listTasks(db: Database, filter?: { status?: string; projectId?: string }): Effect.Effect<TaskRow[], DbError> {
+export function listTasks(db: Database, filter?: { status?: string; projectId?: string; search?: string }): Effect.Effect<TaskRow[], DbError> {
   return dbTry(() => {
     const conditions: string[] = []
     const params: Record<string, string> = {}
@@ -55,6 +55,10 @@ export function listTasks(db: Database, filter?: { status?: string; projectId?: 
     if (filter?.projectId) {
       conditions.push("project_id = $project_id")
       params.$project_id = filter.projectId
+    }
+    if (filter?.search) {
+      conditions.push("(title LIKE $search OR description LIKE $search)")
+      params.$search = `%${filter.search}%`
     }
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : ""
     return db.prepare(`SELECT * FROM tasks${where} ORDER BY created_at DESC`).all(params) as TaskRow[]

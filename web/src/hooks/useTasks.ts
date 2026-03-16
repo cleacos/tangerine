@@ -11,7 +11,7 @@ interface UseTasksResult {
   refetch: () => void
 }
 
-export function useTasks(filter?: { status?: string; project?: string }): UseTasksResult {
+export function useTasks(filter?: { status?: string; project?: string; search?: string }): UseTasksResult {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -36,7 +36,7 @@ export function useTasks(filter?: { status?: string; project?: string }): UseTas
 
     const interval = setInterval(refetch, POLL_INTERVAL)
     return () => clearInterval(interval)
-  }, [filter?.status, filter?.project, refetch])
+  }, [filter?.status, filter?.project, filter?.search, refetch])
 
   return { tasks, loading, error, refetch }
 }
