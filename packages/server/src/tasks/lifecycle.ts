@@ -2,7 +2,7 @@
 // Each step is logged so an AI agent can reconstruct failures from taskId alone.
 
 import { Effect } from "effect"
-import { createLogger, truncate } from "../logger"
+import { createLogger } from "../logger"
 import { SessionStartError } from "../errors"
 import type { TaskRow, VmRow } from "../db/types"
 import type { SessionTunnel } from "../vm/tunnel"

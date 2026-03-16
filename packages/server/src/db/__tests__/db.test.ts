@@ -11,7 +11,6 @@ import {
   createVm,
   getVm,
   listVms,
-  updateVm,
   updateVmStatus,
   assignVm,
   releaseVm,

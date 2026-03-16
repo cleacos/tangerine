@@ -39,7 +39,8 @@ function createMockPoolDeps(): PoolDeps & { vms: Map<string, MockVm> } {
         idleSince: null,
       }
       vms.set(id, vm)
-      return Effect.succeed(vm as ReturnType<PoolDeps["provisionVm"]> extends Effect.Effect<infer T, infer _E> ? T : never)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      return Effect.succeed(vm as ReturnType<PoolDeps["provisionVm"]> extends Effect.Effect<infer T, infer _Err> ? T : never)
     },
 
     destroyVm(vmId: string) {

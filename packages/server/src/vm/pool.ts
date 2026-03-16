@@ -13,7 +13,6 @@ interface PoolVmRow {
   [key: string]: unknown
 }
 import type { PoolConfig, ProviderSlot } from "./pool-types"
-import type { Provider, Instance } from "./providers/types"
 
 const log = createLogger("pool")
 

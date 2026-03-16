@@ -1,9 +1,8 @@
 import { Database } from "bun:sqlite"
 import { Effect } from "effect"
 import { SCHEMA } from "../db/schema"
-import type { TaskRow } from "../db/types"
-import type { Provider, Instance, Snapshot, CreateInstanceOptions } from "../vm/providers/types"
-import type { Task, TaskSource } from "@tangerine/shared"
+import type { Provider, Instance, CreateInstanceOptions } from "../vm/providers/types"
+import type { Task } from "@tangerine/shared"
 
 /** Create an in-memory SQLite DB with schema applied */
 export function createTestDb(): Database {

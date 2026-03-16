@@ -3,7 +3,7 @@
 
 import { Effect, Schedule } from "effect"
 import { createLogger } from "../logger"
-import { SessionStartError } from "../errors"
+
 import type { TaskRow } from "../db/types"
 import type { CredentialConfig, LifecycleDeps, ProjectConfig } from "./lifecycle"
 import { startSession } from "./lifecycle"

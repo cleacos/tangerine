@@ -31,7 +31,7 @@ export function wsRoutes(deps: AppDeps): WsSetup {
         onOpen(_event, ws) {
           // Run Effect-based getTask inside callback via runPromise
           Effect.runPromise(getTask(deps.db, taskId)).then(
-            (task) => {
+            (_task) => {
               // Confirm connection
               const connected: WsServerMessage = { type: "connected" }
               ws.send(JSON.stringify(connected))

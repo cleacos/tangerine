@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock, afterEach, spyOn } from "bun:test"
+import { describe, it, expect, beforeEach, mock, afterEach } from "bun:test"
 import { Effect } from "effect"
 import { pollGitHubIssues, type GitHubDeps } from "../integrations/github"
 /** Local ProjectConfig type matching github module's interface */

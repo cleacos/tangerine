@@ -9,6 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@opencode-ai/sdk": "^1.2.27",
     "@tangerine/shared": "workspace:*",
     "effect": "^3.12",
     "hono": "^4.7",

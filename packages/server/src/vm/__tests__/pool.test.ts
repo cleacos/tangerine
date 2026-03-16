@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { Effect } from "effect";
 import { Database } from "bun:sqlite";
 import { VMPoolManager } from "../pool.ts";
-import type { VmRow } from "../pool.ts";
 import type { PoolConfig } from "../pool-types.ts";
 import type {
   Provider,
