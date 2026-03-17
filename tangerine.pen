@@ -29498,13 +29498,14 @@
                               "id": "g6uQA",
                               "name": "c3i1",
                               "width": "fill_container",
-                              "justifyContent": "space_between",
-                              "alignItems": "center",
+                              "layout": "vertical",
+                              "gap": 4,
                               "children": [
                                 {
                                   "type": "frame",
                                   "id": "6aDjA",
                                   "name": "c3i1l",
+                                  "width": "fill_container",
                                   "gap": 8,
                                   "alignItems": "center",
                                   "children": [
@@ -29536,6 +29537,51 @@
                                   "fontFamily": "Inter",
                                   "fontSize": 12,
                                   "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ugZUk",
+                          "name": "btnRow",
+                          "width": "fill_container",
+                          "justifyContent": "end",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "bLttt",
+                              "name": "rebuildBtn",
+                              "fill": "#f5f5f5",
+                              "cornerRadius": 6,
+                              "gap": 6,
+                              "padding": [
+                                5,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon_font",
+                                  "id": "4PoLT",
+                                  "name": "rebuildIcon",
+                                  "width": 12,
+                                  "height": 12,
+                                  "iconFontName": "refresh-cw",
+                                  "iconFontFamily": "lucide",
+                                  "fill": "#525252"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "txwmX",
+                                  "name": "rebuildTxt",
+                                  "fill": "#525252",
+                                  "content": "Rebuild",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
                                 }
                               ]
                             }
@@ -29952,6 +29998,188 @@
                               "fontWeight": "normal"
                             }
                           ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "lVZma",
+                  "name": "build-log-section",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "HD2Um",
+                      "name": "blHdr",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "0dSuT",
+                          "name": "blChev",
+                          "rotation": 90,
+                          "width": 14,
+                          "height": 14,
+                          "iconFontName": "chevron-right",
+                          "iconFontFamily": "lucide",
+                          "fill": "#737373"
+                        },
+                        {
+                          "type": "text",
+                          "id": "0PI6i",
+                          "name": "blTtl",
+                          "fill": "#0a0a0a",
+                          "content": "Build Log",
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "W2ylL",
+                          "name": "blBadge",
+                          "fill": "#dbeafe",
+                          "cornerRadius": 12,
+                          "padding": [
+                            3,
+                            10
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "WMYrD",
+                              "name": "blBadgeTxt",
+                              "fill": "#1d4ed8",
+                              "content": "Live",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "kj4ve",
+                      "name": "blTerm",
+                      "clip": true,
+                      "width": "fill_container",
+                      "height": 200,
+                      "fill": "#1a1a1a",
+                      "cornerRadius": 8,
+                      "layout": "vertical",
+                      "padding": 16,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "R6TSD",
+                          "name": "t1",
+                          "fill": "#d4d4d4",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "=== Golden image build: wordpress-woocommerce-dev ===",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "oRRwJ",
+                          "name": "t2",
+                          "fill": "#d4d4d4",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "[11:25:01.234] Creating VM from template...",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "nIGl2",
+                          "name": "t3",
+                          "fill": "#d4d4d4",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "[11:26:42.891] VM created (ip: 127.0.0.1, port: 52998)",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "0MDoI",
+                          "name": "t4",
+                          "fill": "#22c55e",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "[11:27:10.445] SSH ready",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "LCMFi",
+                          "name": "t5",
+                          "fill": "#d4d4d4",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "[11:27:10.500] Running build script...",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "XhVGW",
+                          "name": "t6",
+                          "fill": "#d4d4d4",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "==> Installing pnpm",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "wN6BE",
+                          "name": "t7",
+                          "fill": "#d4d4d4",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "==> Installing Playwright with Chromium",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "WrGH0",
+                          "name": "t8",
+                          "fill": "#a3a3a3",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Downloading Chromium 131.0.6778.33...",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -31085,13 +31313,14 @@
                   "id": "XOctQ",
                   "name": "mc3row",
                   "width": "fill_container",
-                  "justifyContent": "space_between",
-                  "alignItems": "center",
+                  "layout": "vertical",
+                  "gap": 4,
                   "children": [
                     {
                       "type": "frame",
                       "id": "KZXDC",
                       "name": "mc3l",
+                      "width": "fill_container",
                       "gap": 8,
                       "alignItems": "center",
                       "children": [
@@ -31123,6 +31352,51 @@
                       "fontFamily": "Inter",
                       "fontSize": 12,
                       "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "bzSXm",
+                  "name": "mBtnRow",
+                  "width": "fill_container",
+                  "justifyContent": "end",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "9sD47",
+                      "name": "mRebuildBtn",
+                      "fill": "#f5f5f5",
+                      "cornerRadius": 6,
+                      "gap": 6,
+                      "padding": [
+                        5,
+                        12
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "ciO7g",
+                          "name": "mRebuildIcon",
+                          "width": 12,
+                          "height": 12,
+                          "iconFontName": "refresh-cw",
+                          "iconFontFamily": "lucide",
+                          "fill": "#525252"
+                        },
+                        {
+                          "type": "text",
+                          "id": "ISNLu",
+                          "name": "mRebuildTxt",
+                          "fill": "#525252",
+                          "content": "Rebuild",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        }
+                      ]
                     }
                   ]
                 }
@@ -31450,6 +31724,162 @@
                           "fontWeight": "normal"
                         }
                       ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "RM2nZ",
+              "name": "m-build-log-section",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "GnX4U",
+                  "name": "mblHdr",
+                  "width": "fill_container",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon_font",
+                      "id": "2kMZw",
+                      "name": "mblChev",
+                      "rotation": 90,
+                      "width": 14,
+                      "height": 14,
+                      "iconFontName": "chevron-right",
+                      "iconFontFamily": "lucide",
+                      "fill": "#737373"
+                    },
+                    {
+                      "type": "text",
+                      "id": "trcMe",
+                      "name": "mblTtl",
+                      "fill": "#0a0a0a",
+                      "content": "Build Log",
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "BlgEr",
+                      "name": "mblBadge",
+                      "fill": "#dbeafe",
+                      "cornerRadius": 12,
+                      "padding": [
+                        3,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "7GyaV",
+                          "name": "mblBadgeTxt",
+                          "fill": "#1d4ed8",
+                          "content": "Live",
+                          "fontFamily": "Inter",
+                          "fontSize": 11,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "hPUhr",
+                  "name": "mblTerm",
+                  "clip": true,
+                  "width": "fill_container",
+                  "height": 160,
+                  "fill": "#1a1a1a",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "padding": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "n8hcj",
+                      "name": "mt1",
+                      "fill": "#d4d4d4",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "=== Golden image build ===",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "8EXZv",
+                      "name": "mt2",
+                      "fill": "#d4d4d4",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "[11:25:01] Creating VM...",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "zYiJY",
+                      "name": "mt3",
+                      "fill": "#22c55e",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "[11:27:10] SSH ready",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "G62Sq",
+                      "name": "mt4",
+                      "fill": "#d4d4d4",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "[11:27:10] Running build script...",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "zMXpB",
+                      "name": "mt5",
+                      "fill": "#d4d4d4",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "==> Installing pnpm",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "lwRtw",
+                      "name": "mt6",
+                      "fill": "#d4d4d4",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "==> Installing Playwright",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 }
@@ -32845,6 +33275,304 @@
                       "fontWeight": "normal"
                     }
                   ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "D1FsD",
+      "x": 0,
+      "y": 11917,
+      "name": "Build Log Section",
+      "layout": "vertical",
+      "gap": 40,
+      "children": [
+        {
+          "type": "frame",
+          "id": "2fx57",
+          "name": "Desktop: Build Log (expanded)",
+          "width": 760,
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Mtksr",
+              "name": "blHeader",
+              "width": "fill_container",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "PNzxI",
+                  "name": "blChevron",
+                  "rotation": 90,
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-right",
+                  "iconFontFamily": "lucide",
+                  "fill": "#737373"
+                },
+                {
+                  "type": "text",
+                  "id": "rmrAh",
+                  "name": "blTitle",
+                  "fill": "#0a0a0a",
+                  "content": "Build Log",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "6RT0j",
+                  "name": "blLiveBadge",
+                  "fill": "#dbeafe",
+                  "cornerRadius": 12,
+                  "padding": [
+                    3,
+                    10
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Vg58t",
+                      "name": "blLiveTxt",
+                      "fill": "#1d4ed8",
+                      "content": "Live",
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "9AV7M",
+              "name": "blTerminal",
+              "clip": true,
+              "width": "fill_container",
+              "height": 300,
+              "fill": "#1a1a1a",
+              "cornerRadius": 8,
+              "layout": "vertical",
+              "padding": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "7naGx",
+                  "name": "bl1",
+                  "fill": "#d4d4d4",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "=== Golden image build: wordpress-woocommerce-dev ===",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "Pt0LZ",
+                  "name": "bl2",
+                  "fill": "#737373",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "[11:25:01.234] Template: /Users/tung/Projects/tangerine/packages/server/src/image/tangerine.yaml",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "jhsRZ",
+                  "name": "bl3",
+                  "fill": "#737373",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "[11:25:01.235] Golden VM: tangerine-golden-wordpress-woocommerce-dev",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "GszfA",
+                  "name": "bl4",
+                  "fill": "#d4d4d4",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "[11:25:01.240] Creating VM from template...",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "18FMK",
+                  "name": "bl5",
+                  "fill": "#d4d4d4",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "[11:26:42.891] VM created: tangerine-golden-woo (ip: 127.0.0.1, port: 52998)",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "OyI0f",
+                  "name": "bl6",
+                  "fill": "#d4d4d4",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "[11:26:42.892] Waiting for SSH...",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "1gy6A",
+                  "name": "bl7",
+                  "fill": "#22c55e",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "[11:27:10.445] SSH ready",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "gHkAf",
+                  "name": "bl8",
+                  "fill": "#d4d4d4",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "[11:27:10.500] Running build script: ~/tangerine/images/wordpress-woocommerce-dev/build.sh",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "rbBy0",
+                  "name": "bl9",
+                  "fill": "#737373",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "--- build script output ---",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "r8p8l",
+                  "name": "bl10",
+                  "fill": "#d4d4d4",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "==> Installing pnpm",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "5NTIk",
+                  "name": "bl11",
+                  "fill": "#a3a3a3",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "added 1 package in 3s",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "4XHcv",
+                  "name": "bl12",
+                  "fill": "#d4d4d4",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "==> Installing Playwright with Chromium",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "a1Pet",
+                  "name": "bl13",
+                  "fill": "#a3a3a3",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Downloading Chromium 131.0.6778.33 (playwright build v1148)...",
+                  "lineHeight": 1.6,
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "niOKU",
+          "name": "Desktop: Build Log (collapsed)",
+          "width": 760,
+          "layout": "vertical",
+          "gap": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "n5i4T",
+              "name": "blcHeader",
+              "width": "fill_container",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "Vo5ii",
+                  "name": "blcChevron",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-right",
+                  "iconFontFamily": "lucide",
+                  "fill": "#737373"
+                },
+                {
+                  "type": "text",
+                  "id": "mUOkO",
+                  "name": "blcTitle",
+                  "fill": "#0a0a0a",
+                  "content": "Build Log",
+                  "fontFamily": "Inter",
+                  "fontSize": 16,
+                  "fontWeight": "600"
                 }
               ]
             }
