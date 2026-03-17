@@ -25,6 +25,7 @@ export interface TaskManagerDeps {
   updateTask(taskId: string, updates: Partial<Omit<TaskRow, "id">>): Effect.Effect<TaskRow | null, Error>
   getTask(taskId: string): Effect.Effect<TaskRow | null, Error>
   listTasks(filter?: { status?: string; projectId?: string }): Effect.Effect<TaskRow[], Error>
+  insertSessionLog(log: { task_id: string; role: string; content: string }): Effect.Effect<unknown, Error>
   lifecycleDeps: LifecycleDeps
   cleanupDeps: CleanupDeps
   retryDeps: RetryDeps
@@ -67,6 +68,14 @@ export function createTask(
     })
 
     log.info("Task created", { taskId: id, projectId: params.projectId, source: params.source, title: params.title })
+
+    // Log creation as the first activity entry
+    yield* deps.insertSessionLog({
+      task_id: id,
+      role: "system",
+      content: `Task created: ${params.title}`,
+    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
+
     emitStatusChange(id, task.status)
 
     // Kick off provisioning in a background fiber so task creation is non-blocking

@@ -9,7 +9,7 @@ interface ActivityListProps {
 }
 
 export function ActivityList({ messages, variant = "compact" }: ActivityListProps) {
-  const activities = messages.filter((m) => m.role === "assistant" || m.role === "tool")
+  const activities = messages.filter((m) => m.role === "assistant" || m.role === "tool" || m.role === "system")
 
   if (activities.length === 0) {
     return <div className="py-8 text-center text-[12px] text-[#737373]">No activity yet</div>
