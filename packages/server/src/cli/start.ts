@@ -120,7 +120,7 @@ export async function start(): Promise<void> {
               const maxAttempts = 30
               for (let i = 0; i < maxAttempts; i++) {
                 try {
-                  const res = await fetch(`http://localhost:${opencodePort}/health`)
+                  const res = await fetch(`http://localhost:${opencodePort}/global/health`)
                   if (res.ok) return
                 } catch {
                   // not ready yet
