@@ -104,6 +104,7 @@ export interface VmInfo {
   status: string
   ip: string | null
   taskId: string | null
+  taskTitle: string | null
   provider: string
   createdAt: string
 }

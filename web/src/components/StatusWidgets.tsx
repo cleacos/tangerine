@@ -230,8 +230,8 @@ export function VmList({ vms }: { vms: VmInfo[] }) {
                 <span className="truncate font-mono text-[12px] text-fg">{vm.id.slice(0, 12)}</span>
                 <div><StatusBadge status={vm.status} /></div>
                 <span className="truncate font-mono text-[12px] text-fg">{vm.ip ?? "—"}</span>
-                <span className={`truncate text-[13px] ${vm.taskId ? "font-medium text-fg" : "text-fg-muted"}`}>
-                  {vm.taskId ?? "—"}
+                <span className={`truncate text-[13px] ${vm.taskId ? "font-medium text-fg" : "text-fg-muted"}`} title={vm.taskId ?? undefined}>
+                  {vm.taskTitle ?? (vm.taskId ? vm.taskId.slice(0, 8) : "—")}
                 </span>
                 <span className="truncate text-[13px] text-fg-muted">{formatRelativeTime(vm.createdAt)}</span>
               </div>
@@ -248,7 +248,7 @@ export function VmList({ vms }: { vms: VmInfo[] }) {
                 </div>
                 <div className="flex gap-3 text-[11px] text-fg-muted">
                   <span className="font-mono">{vm.ip ?? "—"}</span>
-                  <span>{vm.taskId ? vm.taskId.slice(0, 12) : "No task"}</span>
+                  <span>{vm.taskTitle ?? (vm.taskId ? vm.taskId.slice(0, 8) : "No task")}</span>
                   <span>{formatRelativeTime(vm.createdAt)}</span>
                 </div>
               </div>

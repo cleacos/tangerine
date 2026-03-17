@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { Hono } from "hono"
 import type { AppDeps } from "../app"
 import { runEffect } from "../effect-helpers"
-import { listVms, listImages } from "../../db/queries"
+import { listImages } from "../../db/queries"
 import { querySystemLogs } from "../../system-log"
 import { buildLogPath } from "../../image/build"
 
@@ -20,18 +20,24 @@ export function systemRoutes(deps: AppDeps): Hono {
 
   app.get("/vms", (c) => {
     return runEffect(c,
-      listVms(deps.db).pipe(
-        Effect.map((rows) => rows
-          .filter((r) => r.status !== "destroyed")
-          .map((r) => ({
-            id: r.id,
-            status: r.status,
-            ip: r.ip,
-            taskId: r.task_id,
-            provider: r.provider,
-            createdAt: r.created_at,
-          })))
-      )
+      Effect.sync(() => {
+        const rows = deps.db.prepare(`
+          SELECT vms.*, tasks.title as task_title
+          FROM vms
+          LEFT JOIN tasks ON vms.task_id = tasks.id
+          WHERE vms.status != 'destroyed'
+          ORDER BY vms.created_at DESC
+        `).all() as Array<{ id: string; status: string; ip: string | null; task_id: string | null; provider: string; created_at: string; task_title: string | null }>
+        return rows.map((r) => ({
+          id: r.id,
+          status: r.status,
+          ip: r.ip,
+          taskId: r.task_id,
+          taskTitle: r.task_title,
+          provider: r.provider,
+          createdAt: r.created_at,
+        }))
+      })
     )
   })
 
