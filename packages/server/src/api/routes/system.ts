@@ -30,26 +30,31 @@ export function systemRoutes(deps: AppDeps): Hono {
     )
   })
 
+  // Returns the latest golden image for a project (or all if no project)
   app.get("/images", (c) => {
     const project = c.req.query("project") || undefined
     return runEffect(c,
       listImages(deps.db).pipe(
         Effect.map((rows) => {
-          let filtered = rows
-          // Filter by project's configured image name if project specified
-          if (project) {
-            const projectConfig = deps.config.config.projects.find((p) => p.name === project)
-            if (projectConfig) {
-              filtered = rows.filter((r) => r.name === projectConfig.image)
-            }
-          }
-          return filtered.map((r) => ({
+          const mapped = rows.map((r) => ({
             id: r.id,
             name: r.name,
             provider: r.provider,
             snapshotId: r.snapshot_id,
             createdAt: r.created_at,
           }))
+
+          if (!project) return mapped
+
+          // Match by project's configured image name, return only the latest
+          const projectConfig = deps.config.config.projects.find((p) => p.name === project)
+          if (!projectConfig) return []
+
+          const matching = mapped
+            .filter((r) => r.name === projectConfig.image)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+
+          return matching.slice(0, 1)
         })
       )
     )

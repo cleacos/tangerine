@@ -96,32 +96,39 @@ function PoolCard({ pool }: { pool: PoolStats }) {
   )
 }
 
-function ImageCard({ images }: { images: ImageInfo[] }) {
+function ImageCard({ image, projectImage }: { image: ImageInfo | null; projectImage?: string }) {
+  const built = !!image
+
   return (
     <div className="flex flex-1 flex-col gap-2.5 rounded-[10px] border border-[#e5e5e5] p-3.5 md:gap-3 md:p-4">
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-medium text-[#737373]">Golden Image</span>
-        <span className="rounded-xl bg-[#dcfce7] px-2.5 py-0.5 text-[11px] font-semibold text-[#16a34a]">
-          {images.length} Built
+        <span
+          className="rounded-xl px-2.5 py-0.5 text-[11px] font-semibold"
+          style={built
+            ? { color: "#16a34a", backgroundColor: "#dcfce7" }
+            : { color: "#a16207", backgroundColor: "#fef9c3" }
+          }
+        >
+          {built ? "Built" : "Not Built"}
         </span>
       </div>
-      <span className="text-[24px] font-bold text-[#0a0a0a] md:text-[28px]">{images.length}</span>
-      <div className="flex flex-col gap-2">
-        {images.map((img) => (
-          <div key={img.id} className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <svg className="h-3.5 w-3.5 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
-              </svg>
-              <span className="text-[13px] font-medium text-[#0a0a0a]">{img.name}</span>
-            </div>
-            <span className="text-[12px] text-[#737373]">{img.snapshotId.slice(0, 9)} · {formatRelativeTime(img.createdAt)}</span>
+      {built ? (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <svg className="h-3.5 w-3.5 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+            </svg>
+            <span className="text-[13px] font-medium text-[#0a0a0a]">{image.name}</span>
           </div>
-        ))}
-        {images.length === 0 && (
-          <span className="text-[12px] text-[#737373]">No images built yet</span>
-        )}
-      </div>
+          <span className="text-[12px] text-[#737373]">{image.snapshotId.slice(0, 9)} · {formatRelativeTime(image.createdAt)}</span>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <span className="text-[13px] text-[#737373]">{projectImage ?? "No image configured"}</span>
+          <span className="text-[12px] text-[#a3a3a3]">Run: tangerine image build</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -245,7 +252,7 @@ export function StatusPage() {
             <div className="flex flex-col gap-4 md:flex-row md:gap-4">
               <ActiveRunsCard tasks={tasks} />
               {pool && <PoolCard pool={pool} />}
-              <ImageCard images={images} />
+              <ImageCard image={images[0] ?? null} projectImage={current?.image} />
             </div>
 
             {/* VM list */}
