@@ -2,7 +2,7 @@ import { Routes, Route } from "react-router-dom"
 import { Layout } from "./components/Layout"
 import { Dashboard } from "./pages/Dashboard"
 import { TaskDetail } from "./pages/TaskDetail"
-import { NewAgent } from "./pages/NewAgent"
+import { NewAgentPage } from "./pages/NewAgentPage"
 import { ProjectProvider } from "./context/ProjectContext"
 
 export function App() {
@@ -11,7 +11,7 @@ export function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
-          <Route path="new" element={<NewAgent />} />
+          <Route path="new" element={<NewAgentPage />} />
           <Route path="tasks/:id" element={<TaskDetail />} />
         </Route>
       </Routes>
