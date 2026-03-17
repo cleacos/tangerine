@@ -6,28 +6,21 @@ import { TasksSidebar } from "../components/TasksSidebar"
 import { NewAgentForm } from "../components/NewAgentForm"
 import { createTask } from "../lib/api"
 
-/* ── Status helpers ── */
+/* ── Status badge config ── */
 
-const statusColors: Record<string, string> = {
-  running: "#22c55e",
-  done: "#a3a3a3",
-  completed: "#a3a3a3",
-  failed: "#ef4444",
-  cancelled: "#a3a3a3",
-  created: "#f59e0b",
-  provisioning: "#f59e0b",
-  queued: "#f59e0b",
+const statusBadge: Record<string, { label: string; color: string; bg: string }> = {
+  running:      { label: "Running",   color: "#16a34a", bg: "#dcfce7" },
+  done:         { label: "Completed", color: "#737373", bg: "#f5f5f5" },
+  completed:    { label: "Completed", color: "#737373", bg: "#f5f5f5" },
+  failed:       { label: "Failed",    color: "#dc2626", bg: "#fecaca" },
+  cancelled:    { label: "Cancelled", color: "#737373", bg: "#f5f5f5" },
+  created:      { label: "Queued",    color: "#a16207", bg: "#fef9c3" },
+  provisioning: { label: "Queued",    color: "#a16207", bg: "#fef9c3" },
 }
 
-const statusLabels: Record<string, string> = {
-  running: "Running",
-  done: "Completed",
-  completed: "Completed",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  created: "Queued",
-  provisioning: "Queued",
-}
+const defaultBadge = { label: "Unknown", color: "#737373", bg: "#f5f5f5" }
+
+/* ── Helpers ── */
 
 function formatDuration(task: Task): string {
   const start = task.startedAt ? new Date(task.startedAt).getTime() : new Date(task.createdAt).getTime()
@@ -47,12 +40,40 @@ function formatDate(ts: string): string {
   return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
+/* ── Source icon (13x13, lucide style) ── */
+
+function SourceIcon({ source }: { source: string }) {
+  const cls = "h-[13px] w-[13px] text-[#737373]"
+  if (source === "github") {
+    return (
+      <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0-12.814a2.25 2.25 0 1 0 0-2.186m0 2.186a2.25 2.25 0 1 0 0 2.186" />
+      </svg>
+    )
+  }
+  // manual → user icon
+  return (
+    <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+    </svg>
+  )
+}
+
+/* ── Project color helper ── */
+
+const projectColors = [
+  "bg-indigo-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500",
+  "bg-cyan-500", "bg-violet-500", "bg-orange-500", "bg-teal-500",
+]
+
 /* ── Dashboard page ── */
 
 export function Dashboard() {
   const navigate = useNavigate()
-  const { current } = useProject()
+  const { current, projects } = useProject()
   const { query, setQuery, tasks, refetch } = useTaskSearch(current?.name)
+  const currentIndex = current ? projects.indexOf(current) : 0
+  const projectColor = projectColors[currentIndex % projectColors.length]
 
   const handleNewAgent = async (data: { projectId: string; title: string; description?: string }) => {
     try {
@@ -66,7 +87,7 @@ export function Dashboard() {
 
   return (
     <div className="flex h-full">
-      {/* Desktop sidebar — hidden on mobile */}
+      {/* Desktop sidebar */}
       <div className="hidden md:block">
         <TasksSidebar
           tasks={tasks}
@@ -83,16 +104,55 @@ export function Dashboard() {
 
       {/* Mobile: runs list */}
       <div className="flex h-full w-full flex-col md:hidden">
-        {/* Header */}
-        <div className="px-4 pt-5 pb-3">
-          <h1 className="text-[22px] font-bold text-[#0a0a0a]">Agent Runs</h1>
-          <p className="mt-0.5 text-[13px] text-[#a3a3a3]">Monitor and manage run history</p>
+        {/* Mobile topbar */}
+        <div className="flex h-12 items-center justify-between border-b border-[#e5e5e5] px-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#171717]">
+              <svg className="h-3.5 w-3.5 text-[#fafafa]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611l-.772.13a18.142 18.142 0 0 1-6.126 0l-.772-.13c-1.717-.293-2.3-2.379-1.067-3.61L13 15" />
+              </svg>
+            </div>
+            <span className="text-[15px] font-bold text-[#0a0a0a]">Tangerine</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="flex h-8 w-8 items-center justify-center rounded-md">
+              <svg className="h-4 w-4 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
+              </svg>
+            </button>
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#171717]">
+              <span className="text-[11px] font-semibold text-[#fafafa]">TN</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Project switcher */}
+        <button className="flex h-11 items-center justify-between border-b border-[#e5e5e5] px-4">
+          <div className="flex items-center gap-2.5">
+            {current && (
+              <>
+                <div className={`flex h-5 w-5 items-center justify-center rounded ${projectColor}`}>
+                  <span className="text-[9px] font-bold text-white">{current.name.charAt(0).toUpperCase()}</span>
+                </div>
+                <span className="text-[14px] font-medium text-[#0a0a0a]">{current.name}</span>
+              </>
+            )}
+          </div>
+          <svg className="h-3.5 w-3.5 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+
+        {/* Runs header */}
+        <div className="flex flex-col gap-1 border-b border-[#e5e5e5] px-4 py-3">
+          <h1 className="text-[18px] font-semibold text-[#0a0a0a]">Agent Runs</h1>
+          <p className="text-[12px] text-[#737373]">Monitor and manage run history</p>
         </div>
 
         {/* Search + New */}
-        <div className="flex items-center gap-2 px-4 pb-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-3 py-2">
-            <svg className="h-4 w-4 shrink-0 text-[#a3a3a3]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <div className="flex items-center gap-2 px-4 py-2.5">
+          <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-[#e5e5e5] px-2.5">
+            <svg className="h-4 w-4 shrink-0 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
             </svg>
             <input
@@ -100,57 +160,57 @@ export function Dashboard() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search runs..."
-              className="min-w-0 flex-1 bg-transparent text-[14px] text-[#0a0a0a] placeholder-[#a3a3a3] outline-none"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-[#0a0a0a] placeholder-[#737373] outline-none"
             />
           </div>
           <Link
             to="/new"
-            className="flex items-center gap-1.5 rounded-lg bg-[#171717] px-4 py-2.5 text-white"
+            className="flex h-9 items-center gap-1.5 rounded-lg bg-[#171717] px-3.5 text-white"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            <span className="text-[14px] font-medium">Run</span>
+            <span className="text-[13px] font-medium">Run</span>
           </Link>
         </div>
 
-        {/* Task cards */}
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
+        {/* Run cards */}
+        <div className="flex-1 overflow-y-auto px-4 pb-4 pt-1">
           <div className="flex flex-col gap-2.5">
             {tasks.map((task) => {
-              const statusColor = statusColors[task.status] ?? "#a3a3a3"
-              const statusLabel = statusLabels[task.status] ?? task.status
+              const badge = statusBadge[task.status] ?? defaultBadge
 
               return (
                 <Link
                   key={task.id}
                   to={`/tasks/${task.id}`}
-                  className="rounded-xl border border-[#e5e5e5] bg-white p-4 transition active:bg-[#fafafa]"
+                  className="rounded-[10px] border border-[#e5e5e5] p-3.5 transition active:bg-[#fafafa]"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-[14px] font-semibold leading-tight text-[#0a0a0a]">{task.title}</span>
+                  {/* Title + badge */}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 truncate text-[14px] font-medium text-[#0a0a0a]">{task.title}</span>
                     <span
-                      className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium"
-                      style={{ color: statusColor, backgroundColor: `${statusColor}15` }}
+                      className="shrink-0 rounded-xl px-2.5 py-0.5 text-[11px] font-semibold"
+                      style={{ color: badge.color, backgroundColor: badge.bg }}
                     >
-                      {statusLabel}
+                      {badge.label}
                     </span>
                   </div>
-                  <div className="mt-2.5 flex items-center gap-3 text-[12px] text-[#737373]">
-                    <div className="flex items-center gap-1">
-                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+
+                  {/* Meta row */}
+                  <div className="mt-2.5 flex items-center gap-4 text-[12px] text-[#737373]">
+                    <div className="flex items-center gap-1.5">
+                      <svg className="h-[13px] w-[13px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                       </svg>
                       <span>{formatDuration(task)}</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z" />
-                      </svg>
-                      <span className="capitalize">{task.source === "github" ? "GitHub" : task.source}</span>
+                    <div className="flex items-center gap-1.5">
+                      <SourceIcon source={task.source} />
+                      <span className="capitalize">{task.source === "github" ? "GitHub Push" : task.source}</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <div className="flex items-center gap-1.5">
+                      <svg className="h-[13px] w-[13px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
                       </svg>
                       <span>{formatDate(task.createdAt)}</span>
