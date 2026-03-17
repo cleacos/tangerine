@@ -27,6 +27,7 @@ export interface LifecycleDeps {
   createOpencodeSession(opencodePort: number, title: string): Effect.Effect<string, import("../errors").AgentError>
   waitForHealth(opencodePort: number): Effect.Effect<void, import("../errors").HealthCheckError>
   updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, Error>
+  logActivity(taskId: string, type: "lifecycle" | "system", event: string, content: string, metadata?: Record<string, unknown>): Effect.Effect<unknown, Error>
 }
 
 export interface ProjectConfig {
@@ -48,13 +49,19 @@ export function startSession(
   creds: CredentialConfig,
   deps: LifecycleDeps,
 ): Effect.Effect<SessionInfo, SessionStartError> {
+  // Log activity for a task, swallowing errors so logging never breaks the lifecycle
+  const activity = (event: string, content: string, metadata?: Record<string, unknown>) =>
+    deps.logActivity(task.id, "lifecycle", event, content, metadata).pipe(Effect.catchAll(() => Effect.void))
+
   return Effect.gen(function* () {
     const taskLog = log.child({ taskId: task.id })
     const sessionSpan = taskLog.startOp("session-start")
 
     // Acquire a VM from the warm pool (or provision a new one)
     taskLog.info("Acquiring VM")
+    yield* activity("vm.acquiring", "Acquiring VM from pool")
     const vm = yield* deps.acquireVm(task.id).pipe(
+      Effect.tapError((e) => activity("vm.acquire_failed", `VM acquisition failed: ${e.message}`)),
       Effect.mapError((e) => new SessionStartError({
         message: `VM acquisition failed: ${e.message}`,
         taskId: task.id,
@@ -63,6 +70,7 @@ export function startSession(
       }))
     )
     const vmLog = taskLog.child({ vmId: vm.id })
+    yield* activity("vm.acquired", `VM acquired: ${vm.id}`, { vmId: vm.id, ip: vm.ip, sshPort: vm.ssh_port })
 
     yield* deps.updateTask(task.id, { vm_id: vm.id, status: "provisioning" }).pipe(
       Effect.mapError((e) => new SessionStartError({
@@ -75,8 +83,11 @@ export function startSession(
 
     // Wait for SSH to become available
     const sshSpan = vmLog.startOp("ssh-connect")
+    yield* activity("ssh.waiting", `Waiting for SSH on ${vm.ip}:${vm.ssh_port}`, { vmId: vm.id })
     yield* deps.waitForSsh(vm.ip!, vm.ssh_port!).pipe(
       Effect.tap(() => Effect.sync(() => sshSpan.end())),
+      Effect.tap(() => activity("ssh.ready", "SSH connection established", { vmId: vm.id })),
+      Effect.tapError((e) => activity("ssh.failed", `SSH connection failed: ${e.message}`, { vmId: vm.id, error: e.message })),
       Effect.tapError((e) => Effect.sync(() => sshSpan.fail(e))),
       Effect.mapError((e) => new SessionStartError({
         message: e.message,
@@ -129,9 +140,9 @@ export function startSession(
     ).pipe(Effect.catchAll(() => Effect.void))
 
     // Clone or update the repository
-    // If golden image pre-cloned the repo, just fetch + reset to latest; otherwise full clone
     const defaultBranch = config.defaultBranch ?? "main"
     const cloneSpan = vmLog.startOp("clone-repo", { repo: task.repo_url })
+    yield* activity("repo.cloning", `Cloning ${task.repo_url}`, { repo: task.repo_url, defaultBranch })
     yield* deps.sshExec(
       vm.ip!,
       vm.ssh_port!,
@@ -141,7 +152,9 @@ export function startSession(
         git clone ${task.repo_url} /workspace/repo
       fi`,
     ).pipe(
+      Effect.tap(() => activity("repo.cloned", "Repository ready", { repo: task.repo_url })),
       Effect.tap(() => Effect.sync(() => cloneSpan.end({ repo: task.repo_url }))),
+      Effect.tapError((e) => activity("repo.clone_failed", `Clone failed: ${e.message}`, { repo: task.repo_url, error: e.message })),
       Effect.tapError((e) => Effect.sync(() => cloneSpan.fail(e, { repo: task.repo_url }))),
       Effect.mapError((e) => new SessionStartError({
         message: `Clone failed: ${e.message}`,
@@ -178,8 +191,11 @@ export function startSession(
 
     // Run project-specific setup
     const setupSpan = vmLog.startOp("setup")
+    yield* activity("setup.started", `Running setup: ${config.setup}`, { command: config.setup })
     yield* deps.sshExec(vm.ip!, vm.ssh_port!, `cd /workspace/repo && ${config.setup}`).pipe(
+      Effect.tap(() => activity("setup.completed", "Setup completed")),
       Effect.tap(() => Effect.sync(() => setupSpan.end())),
+      Effect.tapError((e) => activity("setup.failed", `Setup failed: ${e.message}`, { error: e.message, command: config.setup })),
       Effect.tapError((e) => Effect.sync(() => setupSpan.fail(e))),
       Effect.mapError((e) => new SessionStartError({
         message: `Setup failed: ${e.message}`,
@@ -203,6 +219,7 @@ export function startSession(
       }))
     )
     vmLog.info("OpenCode started")
+    yield* activity("opencode.started", "OpenCode server started on VM")
 
     // Establish SSH tunnels for OpenCode API and preview
     const tunnel = yield* deps.createTunnel(vm.ip!, vm.ssh_port!, {
@@ -272,6 +289,10 @@ export function startSession(
       }))
     )
 
+    yield* activity("session.ready", `Session ready: ${opencodeSessionId}`, {
+      vmId: vm.id, opencodeSessionId,
+      opencodePort: tunnel.opencodePort, previewPort: tunnel.previewPort, branch,
+    })
     vmLog.info("Session ready", { opencodeSessionId })
     sessionSpan.end({ vmId: vm.id, opencodeSessionId })
 

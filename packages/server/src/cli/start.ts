@@ -136,6 +136,7 @@ export async function start(): Promise<void> {
             }),
           }),
         updateTask: (taskId, updates) => updateTask(db, taskId, updates).pipe(Effect.asVoid),
+        logActivity: (taskId, type, event, content, metadata) => logActivity(db, taskId, type, event, content, metadata),
       },
       cleanupDeps: {
         getSessionMessages: (opencodePort, sessionId) =>
