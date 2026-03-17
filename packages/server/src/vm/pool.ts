@@ -313,6 +313,40 @@ export class VMPoolManager {
     }
   }
 
+  /**
+   * Release VMs assigned to tasks that are no longer active (failed/cancelled/done).
+   * Prevents VM leaks after task failures or retries.
+   */
+  releaseStaleVms(): Effect.Effect<number, Error> {
+    return Effect.tryPromise({
+      try: async () => {
+        // Find VMs that are assigned but stale:
+        // 1. Task no longer exists
+        // 2. Task is in a terminal state (failed/cancelled/done)
+        // 3. Task's vm_id points to a different VM (task was re-dispatched)
+        const staleVms = this.db.prepare(`
+          SELECT vms.* FROM vms
+          LEFT JOIN tasks ON vms.task_id = tasks.id
+          WHERE vms.status = 'assigned'
+          AND (
+            tasks.id IS NULL
+            OR tasks.status IN ('failed', 'cancelled', 'done')
+            OR (tasks.vm_id IS NOT NULL AND tasks.vm_id != vms.id)
+          )
+        `).all() as VmDbRow[]
+
+        let released = 0
+        for (const vm of staleVms) {
+          log.info("Releasing stale VM", { vmId: vm.id, taskId: vm.task_id })
+          await Effect.runPromise(this.releaseVm(vm.id))
+          released++
+        }
+        return released
+      },
+      catch: (err) => err instanceof Error ? err : new Error(String(err)),
+    })
+  }
+
   getPoolStats(): Effect.Effect<{
     provisioning: number
     ready: number

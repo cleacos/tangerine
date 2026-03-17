@@ -77,8 +77,8 @@ export function createTask(
 
     emitStatusChange(id, task.status)
 
-    // Kick off provisioning in a background fiber so task creation is non-blocking
-    yield* Effect.fork(
+    // Kick off provisioning as a daemon fiber so it outlives the request scope
+    yield* Effect.forkDaemon(
       startSessionWithRetry(task, projectConfig, deps.credentialConfig, deps.lifecycleDeps, deps.retryDeps)
     )
 
@@ -184,6 +184,58 @@ export function dequeuePrompt(taskId: string): string | undefined {
   const queue = promptQueues.get(taskId)
   if (!queue || queue.length === 0) return undefined
   return queue.shift()
+}
+
+/**
+ * Resume tasks orphaned by a server restart.
+ * Tasks in "created" or "provisioning" status have no running fiber,
+ * so we re-dispatch them via startSessionWithRetry.
+ */
+export function resumeOrphanedTasks(
+  deps: TaskManagerDeps,
+): Effect.Effect<number, Error> {
+  return Effect.gen(function* () {
+    const created = yield* deps.listTasks({ status: "created" })
+    const provisioning = yield* deps.listTasks({ status: "provisioning" })
+    const orphaned = [...created, ...provisioning]
+
+    if (orphaned.length === 0) return 0
+
+    for (const task of orphaned) {
+      const projectConfig = deps.getProjectConfig(task.project_id)
+      if (!projectConfig) {
+        log.warn("Orphaned task has unknown project, marking failed", { taskId: task.id, projectId: task.project_id })
+        yield* deps.updateTask(task.id, { status: "failed", error: "Unknown project on resume" }).pipe(Effect.ignoreLogged)
+        continue
+      }
+
+      log.info("Resuming orphaned task", { taskId: task.id, status: task.status, title: task.title })
+
+      // Release the previously assigned VM before re-dispatching
+      if (task.vm_id) {
+        yield* deps.cleanupDeps.releaseVm(task.vm_id).pipe(
+          Effect.tap(() => Effect.sync(() => log.info("Released orphaned VM", { vmId: task.vm_id, taskId: task.id }))),
+          Effect.catchAll(() => Effect.void),
+        )
+      }
+
+      // Reset to created and clear VM assignment so lifecycle starts fresh
+      yield* deps.updateTask(task.id, {
+        status: "created",
+        vm_id: null,
+        opencode_session_id: null,
+        opencode_port: null,
+        preview_port: null,
+      }).pipe(Effect.ignoreLogged)
+
+      // Use Effect.forkDaemon so the fiber outlives this Effect scope
+      yield* Effect.forkDaemon(
+        startSessionWithRetry(task, projectConfig, deps.credentialConfig, deps.lifecycleDeps, deps.retryDeps)
+      )
+    }
+
+    return orphaned.length
+  })
 }
 
 export function abortAgent(

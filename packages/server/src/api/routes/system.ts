@@ -21,14 +21,16 @@ export function systemRoutes(deps: AppDeps): Hono {
   app.get("/vms", (c) => {
     return runEffect(c,
       listVms(deps.db).pipe(
-        Effect.map((rows) => rows.map((r) => ({
-          id: r.id,
-          status: r.status,
-          ip: r.ip,
-          taskId: r.task_id,
-          provider: r.provider,
-          createdAt: r.created_at,
-        })))
+        Effect.map((rows) => rows
+          .filter((r) => r.status !== "destroyed")
+          .map((r) => ({
+            id: r.id,
+            status: r.status,
+            ip: r.ip,
+            taskId: r.task_id,
+            provider: r.provider,
+            createdAt: r.created_at,
+          })))
       )
     )
   })

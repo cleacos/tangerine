@@ -3,7 +3,7 @@ import { Hono } from "hono"
 import type { AppDeps } from "../app"
 import { mapTaskRow } from "../helpers"
 import { runEffect, runEffectVoid } from "../effect-helpers"
-import { getTask, listTasks } from "../../db/queries"
+import { getTask, listTasks, updateTask } from "../../db/queries"
 import { TaskNotFoundError } from "../../errors"
 
 export function taskRoutes(deps: AppDeps): Hono {
@@ -52,6 +52,33 @@ export function taskRoutes(deps: AppDeps): Hono {
   app.post("/:id/cancel", (c) => {
     return runEffectVoid(c,
       deps.taskManager.cancelTask(c.req.param("id"))
+    )
+  })
+
+  app.post("/:id/retry", (c) => {
+    const taskId = c.req.param("id")
+    return runEffect(c,
+      getTask(deps.db, taskId).pipe(
+        Effect.flatMap((task) => {
+          if (!task) return Effect.fail(new TaskNotFoundError({ taskId }))
+          if (task.status !== "failed") return Effect.fail(new Error("Only failed tasks can be retried"))
+
+          // Mark old task as cancelled and create a fresh one with same params
+          return updateTask(deps.db, taskId, { status: "cancelled" }).pipe(
+            Effect.flatMap(() =>
+              deps.taskManager.createTask({
+                source: task.source as "manual" | "github" | "api",
+                projectId: task.project_id,
+                title: task.title,
+                description: task.description ?? undefined,
+                sourceId: task.source_id ?? undefined,
+                sourceUrl: task.source_url ?? undefined,
+              }).pipe(Effect.mapError((e) => new Error(String(e))))
+            ),
+            Effect.map(mapTaskRow),
+          )
+        }),
+      ),
     )
   })
 

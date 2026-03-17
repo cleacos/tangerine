@@ -31,6 +31,7 @@ export interface LifecycleDeps {
 
 export interface ProjectConfig {
   repo: string
+  defaultBranch?: string
   setup: string
   preview: { port: number }
 }
@@ -120,12 +121,25 @@ export function startSession(
     }
     vmLog.debug("Credentials injected")
 
-    // Clone the repository
+    // Ensure /workspace exists (may be missing if golden image provisioning partially failed)
+    yield* deps.sshExec(
+      vm.ip!,
+      vm.ssh_port!,
+      `sudo mkdir -p /workspace && sudo chown agent:agent /workspace`,
+    ).pipe(Effect.catchAll(() => Effect.void))
+
+    // Clone or update the repository
+    // If golden image pre-cloned the repo, just fetch + reset to latest; otherwise full clone
+    const defaultBranch = config.defaultBranch ?? "main"
     const cloneSpan = vmLog.startOp("clone-repo", { repo: task.repo_url })
     yield* deps.sshExec(
       vm.ip!,
       vm.ssh_port!,
-      `git clone ${task.repo_url} /workspace/repo`,
+      `if [ -d /workspace/repo/.git ]; then
+        cd /workspace/repo && git fetch origin && git reset --hard origin/${defaultBranch}
+      else
+        git clone ${task.repo_url} /workspace/repo
+      fi`,
     ).pipe(
       Effect.tap(() => Effect.sync(() => cloneSpan.end({ repo: task.repo_url }))),
       Effect.tapError((e) => Effect.sync(() => cloneSpan.fail(e, { repo: task.repo_url }))),

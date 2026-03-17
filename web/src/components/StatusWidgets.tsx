@@ -218,22 +218,22 @@ export function VmList({ vms }: { vms: VmInfo[] }) {
         <>
           {/* Desktop: table */}
           <div className="hidden overflow-hidden rounded-lg border border-edge md:block">
-            <div className="flex bg-surface-secondary px-3 py-2.5">
-              <span className="w-[180px] text-[12px] font-medium text-fg-muted">ID</span>
-              <span className="w-[100px] text-[12px] font-medium text-fg-muted">Status</span>
-              <span className="w-[130px] text-[12px] font-medium text-fg-muted">IP</span>
-              <span className="w-[200px] text-[12px] font-medium text-fg-muted">Task</span>
-              <span className="w-[140px] text-[12px] font-medium text-fg-muted">Created</span>
+            <div className="grid grid-cols-[minmax(120px,1fr)_80px_100px_minmax(120px,2fr)_100px] bg-surface-secondary px-3 py-2.5">
+              <span className="text-[12px] font-medium text-fg-muted">ID</span>
+              <span className="text-[12px] font-medium text-fg-muted">Status</span>
+              <span className="text-[12px] font-medium text-fg-muted">IP</span>
+              <span className="text-[12px] font-medium text-fg-muted">Task</span>
+              <span className="text-[12px] font-medium text-fg-muted">Created</span>
             </div>
             {vms.map((vm) => (
-              <div key={vm.id} className="flex items-center border-t border-edge px-3 py-2.5">
-                <span className="w-[180px] font-mono text-[12px] text-fg">{vm.id.slice(0, 12)}</span>
-                <div className="w-[100px]"><StatusBadge status={vm.status} /></div>
-                <span className="w-[130px] font-mono text-[12px] text-fg">{vm.ip ?? "—"}</span>
-                <span className={`w-[200px] text-[13px] ${vm.taskId ? "font-medium text-fg" : "text-fg-muted"}`}>
+              <div key={vm.id} className="grid grid-cols-[minmax(120px,1fr)_80px_100px_minmax(120px,2fr)_100px] items-center border-t border-edge px-3 py-2.5">
+                <span className="truncate font-mono text-[12px] text-fg">{vm.id.slice(0, 12)}</span>
+                <div><StatusBadge status={vm.status} /></div>
+                <span className="truncate font-mono text-[12px] text-fg">{vm.ip ?? "—"}</span>
+                <span className={`truncate text-[13px] ${vm.taskId ? "font-medium text-fg" : "text-fg-muted"}`}>
                   {vm.taskId ?? "—"}
                 </span>
-                <span className="w-[140px] text-[13px] text-fg-muted">{formatRelativeTime(vm.createdAt)}</span>
+                <span className="truncate text-[13px] text-fg-muted">{formatRelativeTime(vm.createdAt)}</span>
               </div>
             ))}
           </div>
@@ -406,18 +406,18 @@ export function SystemLog() {
         <div className="max-h-[400px] overflow-y-auto rounded-lg border border-edge">
           {/* Desktop: single-row table */}
           <div className="hidden md:block">
-            <div className="flex bg-surface-secondary px-3 py-2">
-              <span className="w-[160px] text-[12px] font-medium text-fg-muted">Time</span>
-              <span className="w-[60px] text-[12px] font-medium text-fg-muted">Level</span>
-              <span className="w-[100px] text-[12px] font-medium text-fg-muted">Source</span>
-              <span className="flex-1 text-[12px] font-medium text-fg-muted">Message</span>
+            <div className="grid grid-cols-[110px_50px_80px_1fr] bg-surface-secondary px-3 py-2">
+              <span className="text-[12px] font-medium text-fg-muted">Time</span>
+              <span className="text-[12px] font-medium text-fg-muted">Level</span>
+              <span className="text-[12px] font-medium text-fg-muted">Source</span>
+              <span className="text-[12px] font-medium text-fg-muted">Message</span>
             </div>
             {logs.map((log) => (
-              <div key={log.id} className="flex items-center border-t border-edge px-3 py-2">
-                <span className="w-[160px] font-mono text-[11px] text-fg-muted">{formatLogTimestamp(log.timestamp)}</span>
-                <div className="w-[60px]"><LogLevelBadge level={log.level} /></div>
-                <span className="w-[100px] text-[12px] font-medium text-fg-muted">{log.logger}</span>
-                <span className="flex-1 truncate text-[12px] text-fg">{log.message}</span>
+              <div key={log.id} className="grid grid-cols-[110px_50px_80px_1fr] items-center border-t border-edge px-3 py-2">
+                <span className="font-mono text-[11px] text-fg-muted">{formatLogTimestamp(log.timestamp)}</span>
+                <div><LogLevelBadge level={log.level} /></div>
+                <span className="truncate text-[12px] font-medium text-fg-muted">{log.logger}</span>
+                <span className="truncate text-[12px] text-fg">{log.message}</span>
               </div>
             ))}
           </div>

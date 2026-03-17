@@ -220,9 +220,11 @@ export async function start(): Promise<void> {
 
     startSpan.end({ port, projects: projectNames })
 
-    // Pool reconciliation: reap idle VMs + provision to minReady
+    // Pool reconciliation: release stale VMs, reap idle VMs, provision to minReady
     const reconcile = async () => {
       try {
+        const released = await Effect.runPromise(pool.releaseStaleVms())
+        if (released > 0) log.info("Released stale VMs", { count: released })
         const reaped = await Effect.runPromise(pool.reapIdleVms())
         if (reaped > 0) log.info("Reaped idle VMs", { count: reaped })
         pool.ensureWarm()
@@ -230,7 +232,16 @@ export async function start(): Promise<void> {
         log.error("Pool reconciliation failed", { error: String(err) })
       }
     }
-    reconcile() // Immediate on startup
+    // Run reconcile first to clean up stale VMs, then resume orphans which acquire fresh VMs
+    await reconcile()
+
+    try {
+      const resumed = await Effect.runPromise(taskManager.resumeOrphanedTasks(tmDeps))
+      if (resumed > 0) log.info("Resumed orphaned tasks", { count: resumed })
+    } catch (err) {
+      log.error("Failed to resume orphaned tasks", { error: String(err) })
+    }
+
     const reconcileInterval = setInterval(reconcile, 60_000)
 
     const shutdown = async (signal: string) => {
