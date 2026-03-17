@@ -220,8 +220,22 @@ export async function start(): Promise<void> {
 
     startSpan.end({ port, projects: projectNames })
 
+    // Pool reconciliation: reap idle VMs + provision to minReady
+    const reconcile = async () => {
+      try {
+        const reaped = await Effect.runPromise(pool.reapIdleVms())
+        if (reaped > 0) log.info("Reaped idle VMs", { count: reaped })
+        pool.ensureWarm()
+      } catch (err) {
+        log.error("Pool reconciliation failed", { error: String(err) })
+      }
+    }
+    reconcile() // Immediate on startup
+    const reconcileInterval = setInterval(reconcile, 60_000)
+
     const shutdown = async (signal: string) => {
       log.info("Shutdown signal received", { signal })
+      clearInterval(reconcileInterval)
       process.exit(0)
     }
 
