@@ -118,16 +118,9 @@ provision:
       export PATH="$HOME/.local/bin:$BUN_INSTALL/bin:$PATH"
       EOF
 
-      # Pre-configure OpenCode for fully autonomous operation
+      # Pre-configure OpenCode (minimal valid config)
       mkdir -p ~/.config/opencode
-      cat > ~/.config/opencode/opencode.json <<'OCEOF'
-      {
-        "model": "anthropic/claude-sonnet-4-20250514",
-        "permissions": {
-          "auto_approve": ["read", "write", "execute"]
-        }
-      }
-      OCEOF
+      echo '{}' > ~/.config/opencode/opencode.json
 
 message: |
   Tangerine VM ready!
