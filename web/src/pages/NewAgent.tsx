@@ -5,10 +5,8 @@ import { createTask } from "../lib/api"
 import { formatModelName } from "../lib/format"
 
 const suggestedTasks = [
-  "Fix failing tests",
-  "Add API docs",
-  "Refactor DB queries",
-  "Update deps",
+  ["Fix failing tests", "Add API docs"],
+  ["Refactor DB queries", "Update deps"],
 ]
 
 export function NewAgent() {
@@ -38,44 +36,44 @@ export function NewAgent() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header with back button */}
-      <div className="flex items-center gap-3 border-b border-[#e5e5e5] px-4 py-3">
+      {/* Header */}
+      <div className="flex h-[52px] items-center gap-3 border-b border-[#e5e5e5] px-4">
         <button onClick={() => navigate("/")} className="text-[#0a0a0a]">
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
           </svg>
         </button>
-        <span className="text-[16px] font-semibold text-[#0a0a0a]">New Agent</span>
+        <span className="text-[18px] font-semibold text-[#0a0a0a]">New Agent</span>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 pt-6">
-        <h1 className="text-[20px] font-bold leading-tight text-[#0a0a0a]">
+      <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 pt-6">
+        {/* Heading */}
+        <span className="text-[20px] font-semibold text-[#0a0a0a]">
           What should the agent work on?
-        </h1>
+        </span>
 
         {/* Textarea */}
-        <div className="mt-5 overflow-hidden rounded-xl border border-[#e5e5e5] bg-white">
+        <div className="h-[120px] overflow-hidden rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-3">
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe the task or paste an Issue URL..."
-            rows={4}
-            className="w-full resize-none border-0 bg-transparent px-4 pt-4 pb-3 text-[14px] leading-[1.6] text-[#0a0a0a] placeholder-[#a3a3a3] outline-none"
+            placeholder="Describe the task or paste an issue URL..."
+            className="h-full w-full resize-none bg-transparent text-[14px] leading-[1.5] text-[#0a0a0a] placeholder-[#737373] outline-none"
           />
         </div>
 
-        {/* Branch + Model chips */}
-        <div className="mt-4 flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-full border border-[#e5e5e5] bg-white px-3 py-1.5">
-            <svg className="h-3.5 w-3.5 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        {/* Branch + Model selectors — equal width */}
+        <div className="flex gap-2">
+          <div className="flex h-10 flex-1 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-3">
+            <svg className="h-4 w-4 shrink-0 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0-12.814a2.25 2.25 0 1 0 0-2.186m0 2.186a2.25 2.25 0 1 0 0 2.186" />
             </svg>
             <span className="text-[13px] text-[#0a0a0a]">{branch}</span>
           </div>
-          <div className="flex items-center gap-1.5 rounded-full border border-[#e5e5e5] bg-white px-3 py-1.5">
-            <svg className="h-3.5 w-3.5 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+          <div className="flex h-10 flex-1 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-3">
+            <svg className="h-4 w-4 shrink-0 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Z" />
             </svg>
             <span className="text-[13px] text-[#0a0a0a]">{model ? formatModelName(model) : "claude-4"}</span>
           </div>
@@ -85,37 +83,40 @@ export function NewAgent() {
         <button
           onClick={handleSubmit}
           disabled={!description.trim() || !current || submitting}
-          className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#171717] py-3.5 text-white transition hover:bg-[#333] disabled:opacity-30"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-[#171717] text-white transition hover:bg-[#333] disabled:opacity-30"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
           </svg>
-          <span className="text-[15px] font-semibold">Start Agent</span>
+          <span className="text-[16px] font-semibold">Start Agent</span>
         </button>
 
+        {/* Divider */}
+        <div className="h-px bg-[#e5e5e5]" />
+
         {/* Suggested tasks */}
-        <div className="mt-8">
-          <span className="text-[13px] font-medium text-[#a3a3a3]">Suggested tasks</span>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {suggestedTasks.map((task) => (
-              <button
-                key={task}
-                onClick={() => setDescription(task)}
-                className="rounded-full border border-[#e5e5e5] bg-white px-3.5 py-2 text-[13px] text-[#0a0a0a] transition active:bg-[#f5f5f5]"
-              >
-                {task}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-col gap-2">
+          <span className="text-[13px] font-medium text-[#737373]">Suggested tasks</span>
+          {suggestedTasks.map((row, i) => (
+            <div key={i} className="flex gap-2">
+              {row.map((task) => (
+                <button
+                  key={task}
+                  onClick={() => setDescription(task)}
+                  className="flex h-9 items-center rounded-[18px] bg-[#f5f5f5] px-3.5 text-[13px] text-[#0a0a0a] transition active:bg-[#ebebeb]"
+                >
+                  {task}
+                </button>
+              ))}
+            </div>
+          ))}
         </div>
 
         {/* Configuration */}
-        <div className="mt-8 pb-8">
-          <span className="text-[13px] font-medium text-[#a3a3a3]">Configuration</span>
-          <div className="mt-3 flex flex-col gap-1">
-            <ToggleRow icon="terminal" label="Terminal access" defaultOn />
-            <ToggleRow icon="globe" label="Web access" defaultOn />
-          </div>
+        <div className="flex flex-col gap-3 pb-8">
+          <span className="text-[13px] font-medium text-[#737373]">Configuration</span>
+          <ToggleRow icon="terminal" label="Terminal access" defaultOn />
+          <ToggleRow icon="globe" label="Web access" defaultOn />
         </div>
       </div>
     </div>
@@ -126,8 +127,8 @@ function ToggleRow({ icon, label, defaultOn }: { icon: string; label: string; de
   const [on, setOn] = useState(defaultOn ?? false)
 
   return (
-    <div className="flex items-center justify-between py-3">
-      <div className="flex items-center gap-3">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
         {icon === "terminal" ? (
           <svg className="h-4 w-4 text-[#737373]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
             <path strokeLinecap="round" strokeLinejoin="round" d="m5.25 4.5 7.5 7.5-7.5 7.5m6 0h6.75" />
