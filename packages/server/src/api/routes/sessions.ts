@@ -1,9 +1,10 @@
 import { Effect } from "effect"
 import { Hono } from "hono"
 import type { AppDeps } from "../app"
-import { getTask, getSessionLogs } from "../../db/queries"
+import { getTask, getSessionLogs, insertSessionLog } from "../../db/queries"
 import { getActivities } from "../../activity"
 import { runEffect, runEffectVoid } from "../effect-helpers"
+import { TaskNotFoundError } from "../../errors"
 
 export function sessionRoutes(deps: AppDeps): Hono {
   const app = new Hono()
@@ -21,6 +22,35 @@ export function sessionRoutes(deps: AppDeps): Hono {
     }
     return runEffectVoid(c,
       deps.taskManager.sendPrompt(c.req.param("id"), body.text)
+    )
+  })
+
+  // REST chat endpoint: sends a prompt and persists the user message.
+  // Async — returns immediately. Use GET /messages or WebSocket for agent response.
+  app.post("/:id/chat", async (c) => {
+    const taskId = c.req.param("id")
+    const body = await c.req.json<{ text?: string }>()
+    if (!body.text) {
+      return c.json({ error: "text is required" }, 400)
+    }
+    return runEffect(c,
+      Effect.gen(function* () {
+        const task = yield* getTask(deps.db, taskId)
+        if (!task) return yield* Effect.fail(new TaskNotFoundError({ taskId }))
+
+        // Persist user message to session_logs for REST API consumers
+        yield* insertSessionLog(deps.db, {
+          task_id: taskId,
+          role: "user",
+          content: body.text!,
+        })
+
+        // Send to agent
+        yield* deps.taskManager.sendPrompt(taskId, body.text!)
+
+        return { ok: true, taskId, status: task.status }
+      }),
+      { status: 202 }
     )
   })
 

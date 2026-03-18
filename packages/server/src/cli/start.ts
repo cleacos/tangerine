@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { createLogger } from "../logger"
 import { loadConfig, getProjectConfig, TANGERINE_HOME, VM_AUTH_PATH, readRawConfig, writeRawConfig } from "../config"
 import { getDb } from "../db/index"
-import { createTask as dbCreateTask, getTask, getVm, listTasks, updateTask, updateVmStatus } from "../db/queries"
+import { createTask as dbCreateTask, getTask, getVm, listTasks, updateTask, updateVmStatus, insertSessionLog } from "../db/queries"
 import { logActivity } from "../activity"
 import type { TaskRow } from "../db/types"
 import { VMPoolManager } from "../vm/pool"
@@ -14,16 +14,17 @@ import type { AppDeps } from "../api/app"
 import { DEFAULT_API_PORT } from "@tangerine/shared"
 import * as taskManager from "../tasks/manager"
 import type { TaskManagerDeps } from "../tasks/manager"
-import { onTaskEvent, onStatusChange } from "../tasks/events"
+import { onTaskEvent, onStatusChange, emitTaskEvent } from "../tasks/events"
 import { sshExec, waitForSsh } from "../vm/ssh"
 import { createTunnel } from "../vm/tunnel"
 import { createProvider } from "../vm/providers/index"
 import type { ProviderType } from "../vm/providers/index"
 import { createPoolConfig } from "../vm/pool-config"
 import { getOrCreateClient } from "../agent/client"
-import { SshError, AgentError, HealthCheckError, VmNotFoundError } from "../errors"
+import { SshError, AgentError, HealthCheckError, VmNotFoundError, PromptError } from "../errors"
 import { initSystemLog, cleanupSystemLogs } from "../system-log"
 import { startBuild, startBaseBuild, getBuildStatus } from "../image/build-service"
+import { subscribeToEvents } from "../agent/events"
 
 const log = createLogger("cli")
 
@@ -150,7 +151,22 @@ export async function start(): Promise<void> {
             if (e instanceof AgentError) return e
             return new AgentError({ message: String(e), taskId: "unknown" })
           })),
-        persistMessages: () => Effect.void, // TODO: implement message persistence to DB
+        persistMessages: (taskId, messages) =>
+          Effect.gen(function* () {
+            for (const msg of messages) {
+              const m = msg as Record<string, unknown>
+              const role = (m.role as string) ?? "assistant"
+              // Extract text content from message parts
+              const parts = m.parts as Array<{ type: string; text?: string }> | undefined
+              const content = parts
+                ?.filter((p) => p.type === "text" && p.text)
+                .map((p) => p.text)
+                .join("\n") ?? JSON.stringify(m)
+              yield* insertSessionLog(db, { task_id: taskId, role, content }).pipe(
+                Effect.catchAll(() => Effect.void)
+              )
+            }
+          }),
         sshExec: (host, port, command) =>
           sshExec(host, port, command).pipe(
             Effect.map((stdout) => ({ stdout, stderr: "", exitCode: 0 }))
@@ -160,6 +176,33 @@ export async function start(): Promise<void> {
       },
       retryDeps: {
         updateTask: (taskId, updates) => updateTask(db, taskId, updates).pipe(Effect.asVoid),
+        onSessionReady: (taskId, session) => {
+          // Subscribe to OpenCode SSE events and relay to task event system
+          Effect.runPromise(
+            subscribeToEvents(session.opencodePort, taskId, (eventData) => {
+              // Relay all events to WebSocket clients
+              emitTaskEvent(taskId, eventData)
+
+              // Persist message events to session_logs for REST API
+              const data = eventData as Record<string, unknown>
+              if (data && typeof data.type === "string" && data.type.startsWith("message")) {
+                const parts = data.parts as Array<{ type: string; text?: string }> | undefined
+                const role = (data.role as string) ?? "assistant"
+                const content = parts
+                  ?.filter((p) => p.type === "text" && p.text)
+                  .map((p) => p.text)
+                  .join("\n") ?? ""
+                if (content) {
+                  Effect.runPromise(
+                    insertSessionLog(db, { task_id: taskId, role, content }).pipe(Effect.catchAll(() => Effect.void))
+                  )
+                }
+              }
+            })
+          ).catch((err) => {
+            log.error("SSE subscription failed", { taskId, error: String(err) })
+          })
+        },
       },
       abortAgent: (opencodePort, sessionId) =>
         Effect.gen(function* () {
@@ -199,10 +242,37 @@ export async function start(): Promise<void> {
         completeTask: (taskId) => taskManager.completeTask(tmDeps, taskId).pipe(
           Effect.mapError((e) => ({ _tag: e._tag, message: e.message }))
         ),
-        sendPrompt: (taskId, text) => {
-          taskManager.queuePrompt(taskId, text)
-          return Effect.void
-        },
+        sendPrompt: (taskId, text) =>
+          Effect.gen(function* () {
+            const task = yield* getTask(db, taskId)
+            if (!task?.opencode_port || !task.opencode_session_id) {
+              // Task not yet running — queue for later
+              taskManager.queuePrompt(taskId, text)
+              return
+            }
+            yield* Effect.tryPromise({
+              try: async () => {
+                const res = await fetch(
+                  `http://localhost:${task.opencode_port}/session/${task.opencode_session_id}/prompt_async`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ parts: [{ type: "text", text }] }),
+                  },
+                )
+                if (!res.ok) {
+                  const err = await res.text()
+                  throw new Error(`OpenCode prompt failed (${res.status}): ${err}`)
+                }
+              },
+              catch: (e) => new PromptError({ message: `Failed to send prompt: ${e}`, taskId }),
+            })
+          }).pipe(
+            Effect.catchAll((e) => {
+              log.error("sendPrompt failed", { taskId, error: String(e) })
+              return Effect.void
+            })
+          ),
         abortTask: (taskId) => taskManager.abortAgent(tmDeps, taskId).pipe(
           Effect.mapError((e) => ({ _tag: e._tag, message: e.message }))
         ),

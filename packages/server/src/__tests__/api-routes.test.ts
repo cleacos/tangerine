@@ -277,6 +277,48 @@ describe("API routes", () => {
     })
   })
 
+  describe("POST /api/tasks/:id/chat", () => {
+    test("sends a prompt and persists user message", async () => {
+      const row = seedTask(db)
+
+      const res = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hello agent" }),
+      }))
+      expect(res.status).toBe(202)
+      const body = await res.json() as { ok: boolean; taskId: string }
+      expect(body.ok).toBe(true)
+      expect(body.taskId).toBe(row.id)
+
+      // Verify user message was persisted
+      const msgs = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}/messages`))
+      const messages = await msgs.json() as Array<{ role: string; content: string }>
+      expect(messages).toHaveLength(1)
+      expect(messages[0]!.role).toBe("user")
+      expect(messages[0]!.content).toBe("Hello agent")
+    })
+
+    test("returns 400 without text", async () => {
+      const row = seedTask(db)
+      const res = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }))
+      expect(res.status).toBe(400)
+    })
+
+    test("returns 404 for unknown task", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/tasks/nonexistent/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hello" }),
+      }))
+      expect(res.status).toBe(404)
+    })
+  })
+
   describe("POST /api/tasks/:id/prompt", () => {
     test("returns 400 without text", async () => {
       const row = seedTask(db)

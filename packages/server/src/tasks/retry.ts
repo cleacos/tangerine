@@ -5,7 +5,7 @@ import { Effect, Schedule } from "effect"
 import { createLogger } from "../logger"
 
 import type { TaskRow } from "../db/types"
-import type { CredentialConfig, LifecycleDeps, ProjectConfig } from "./lifecycle"
+import type { CredentialConfig, LifecycleDeps, ProjectConfig, SessionInfo } from "./lifecycle"
 import { startSession } from "./lifecycle"
 
 const log = createLogger("retry")
@@ -14,6 +14,7 @@ const MAX_RETRY_ATTEMPTS = 3
 
 export interface RetryDeps {
   updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, Error>
+  onSessionReady?(taskId: string, session: SessionInfo): void
 }
 
 export function startSessionWithRetry(
@@ -24,6 +25,11 @@ export function startSessionWithRetry(
   retryDeps: RetryDeps,
 ): Effect.Effect<void, never> {
   return startSession(task, config, creds, lifecycleDeps).pipe(
+    Effect.tap((session) =>
+      Effect.sync(() => {
+        retryDeps.onSessionReady?.(task.id, session)
+      })
+    ),
     // Discard the SessionInfo on success since callers only care about side effects
     Effect.asVoid,
     Effect.retry(
