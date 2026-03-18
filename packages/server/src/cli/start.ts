@@ -73,7 +73,7 @@ export async function start(): Promise<void> {
               // Ensure target directory exists before copying
               await Effect.runPromise(sshExec(host, port, `mkdir -p $(dirname ${VM_AUTH_PATH})`))
               const proc = Bun.spawn(
-                ["scp", "-o", "StrictHostKeyChecking=no", "-P", String(port), authJsonPath, `agent@${host}:${VM_AUTH_PATH}`],
+                ["scp", "-o", "StrictHostKeyChecking=no", "-P", String(port), authJsonPath, `root@${host}:${VM_AUTH_PATH}`],
                 { stdout: "pipe", stderr: "pipe" },
               )
               const exitCode = await proc.exited
@@ -85,14 +85,14 @@ export async function start(): Promise<void> {
             catch: (e) => new SshError({ message: `copyAuthJson failed: ${e}`, host, command: "scp" }),
           }),
         injectCredentials: (host, port, credentials) => {
-          // Write env vars to /home/agent/.env via SSH
+          // Write env vars to /root/.env via SSH
           const envLines = Object.entries(credentials)
             .map(([k, v]) => `${k}=${v}`)
             .join("\n")
           return sshExec(
             host,
             port,
-            `printf '%s\\n' '${envLines}' >> /home/agent/.env`,
+            `printf '%s\\n' '${envLines}' >> /root/.env`,
           ).pipe(Effect.asVoid)
         },
         createTunnel: (vmIp, sshPort, ports) =>

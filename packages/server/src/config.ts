@@ -10,7 +10,7 @@ export const TANGERINE_HOME = join(homedir(), "tangerine")
 export const OPENCODE_AUTH_PATH = join(homedir(), ".local", "share", "opencode", "auth.json")
 
 /** Path where auth.json is placed inside the VM */
-export const VM_AUTH_PATH = "/home/agent/.local/share/opencode/auth.json"
+export const VM_AUTH_PATH = "/root/.local/share/opencode/auth.json"
 
 export interface AppConfig {
   config: TangerineConfig

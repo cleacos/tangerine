@@ -52,8 +52,8 @@ OpenCode resolves credentials in this order: env vars → project `.env` → `au
 ```bash
 # From host → VM via SCP
 scp -P <ssh-port> ~/.local/share/opencode/auth.json \
-  agent@<vm-ip>:/home/agent/.local/share/opencode/auth.json
-ssh -p <ssh-port> agent@<vm-ip> "chmod 600 /home/agent/.local/share/opencode/auth.json"
+  root@<vm-ip>:/root/.local/share/opencode/auth.json
+ssh -p <ssh-port> root@<vm-ip> "chmod 600 /root/.local/share/opencode/auth.json"
 ```
 
 ### Environment Injection
@@ -137,4 +137,4 @@ On session end / VM release:
 - `OPENCODE_SERVER_PASSWORD` adds a layer even if tunnel leaks
 - Golden images never contain credentials
 - Credential injection happens per-session, not at image build time
-- `auth.json` is copied with mode 0600 — only the agent user can read it
+- `auth.json` is copied with mode 0600

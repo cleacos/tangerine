@@ -241,7 +241,7 @@ export class IncusProvider implements Provider {
           "--",
           "bash",
           "-c",
-          `mkdir -p /home/agent/.ssh && echo '${this.sshPubKey}' >> /home/agent/.ssh/authorized_keys && chown -R agent:agent /home/agent/.ssh && chmod 700 /home/agent/.ssh && chmod 600 /home/agent/.ssh/authorized_keys`,
+          `mkdir -p /root/.ssh && echo '${this.sshPubKey}' >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys`,
         ],
         30_000
       );

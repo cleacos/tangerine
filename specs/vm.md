@@ -71,7 +71,7 @@ interface SessionTunnel {
 ```bash
 ssh -N -L <localOpencode>:127.0.0.1:4096 \
        -L <localPreview>:127.0.0.1:<previewPort> \
-       agent@<vm-ip> -p <ssh-port>
+       root@<vm-ip> -p <ssh-port>
 ```
 
 ### Tunnel Health

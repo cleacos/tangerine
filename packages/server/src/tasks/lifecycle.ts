@@ -136,7 +136,7 @@ export function startSession(
     yield* deps.sshExec(
       vm.ip!,
       vm.ssh_port!,
-      `sudo mkdir -p /workspace && sudo chown agent:agent /workspace`,
+      `mkdir -p /workspace`,
     ).pipe(Effect.catchAll(() => Effect.void))
 
     // Clone or update the repository
@@ -209,7 +209,7 @@ export function startSession(
     yield* Effect.tryPromise({
       try: async () => {
         Bun.spawn(
-          ["ssh", "-o", "StrictHostKeyChecking=no", "-p", String(vm.ssh_port!), `agent@${vm.ip!}`,
+          ["ssh", "-o", "StrictHostKeyChecking=no", "-p", String(vm.ssh_port!), `root@${vm.ip!}`,
            "cd /workspace/repo && opencode serve --port 4096 --hostname 0.0.0.0 > /tmp/opencode.log 2>&1"],
           { stdout: "ignore", stderr: "ignore", stdin: "ignore" },
         )

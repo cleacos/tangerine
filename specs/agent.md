@@ -100,7 +100,7 @@ The agent (via OpenCode) has access to:
 
 ## OpenCode Configuration
 
-Pre-baked in golden image at `/home/agent/.config/opencode/opencode.json`:
+Pre-baked in golden image at `/root/.config/opencode/opencode.json`:
 
 ```json
 {

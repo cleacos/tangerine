@@ -26,10 +26,11 @@ ssh:
   loadDotSSHPubKeys: true
   forwardAgent: false
 
+# Root user — these are ephemeral single-purpose VMs, no multi-tenancy.
+# Eliminates PATH fragmentation, npm-global hacks, and sudo dance.
 user:
-  name: "agent"
-  comment: "Tangerine Agent"
-  home: "/home/agent"
+  name: "root"
+  home: "/root"
   shell: "/bin/bash"
 
 # No host mounts — repos are cloned inside the VM
@@ -58,8 +59,7 @@ provision:
         openssh-server \
         unzip \
         ca-certificates \
-        gnupg \
-        sudo
+        gnupg
 
       # Node.js 22 LTS via nodesource
       mkdir -p /etc/apt/keyrings
@@ -80,47 +80,28 @@ provision:
       apt-get update -qq
       apt-get install -y -qq gh
 
-      # Harden SSH — key-only auth, allow user environment for PATH
+      # Harden SSH — key-only auth
       sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
       sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-      sed -i 's/^#\?PermitUserEnvironment.*/PermitUserEnvironment yes/' /etc/ssh/sshd_config
 
-      # Workspace directory owned by agent user
+      # Install OpenCode — lands in /usr/local/bin, always in system PATH
+      npm install -g opencode-ai
+
+      # git: allow operations in any directory (root ownership)
+      git config --global safe.directory '*'
+
+      # Workspace directory
       mkdir -p /workspace
-      chown agent:agent /workspace
 
-      # Sudoers for agent (needed for Docker, package installs in build scripts)
-      echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent
+      # Pre-configure OpenCode (minimal valid config)
+      mkdir -p /root/.config/opencode
+      echo '{}' > /root/.config/opencode/opencode.json
 
       # Cleanup
       apt-get clean
       rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-  - mode: user
-    script: |
-      #!/bin/bash
-      set -eux -o pipefail
-
-      # Set npm global prefix to user dir so `npm install -g` works without sudo
-      mkdir -p ~/.npm-global
-      npm config set prefix ~/.npm-global
-
-      # PATH setup for interactive shells
-      cat >> ~/.bashrc <<'EOF'
-      export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
-      EOF
-
-      # PATH for non-interactive SSH (sourced by sshd via PermitUserEnvironment)
-      mkdir -p ~/.ssh
-      echo "PATH=/home/agent/.npm-global/bin:/home/agent/.local/bin:/usr/local/bin:/usr/bin:/bin" >> ~/.ssh/environment
-
-      # Install OpenCode
-      export PATH="$HOME/.npm-global/bin:$PATH"
-      npm install -g opencode-ai
-      mkdir -p ~/.config/opencode
-      echo '{}' > ~/.config/opencode/opencode.json
-
 message: |
   Tangerine VM ready!
   Workspace: /workspace
-  User: agent
+  User: root

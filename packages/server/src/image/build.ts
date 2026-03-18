@@ -221,7 +221,7 @@ export async function buildImage(imageName: string, log: Logger, opts?: { requir
     // Upload build script to VM via stdin
     const uploadProc = Bun.spawn(
       ["ssh", "-o", "StrictHostKeyChecking=no", "-p", String(instance.sshPort ?? 22),
-       `agent@${instance.ip}`, "base64 -d > /tmp/build.sh && chmod +x /tmp/build.sh"],
+       `root@${instance.ip}`, "base64 -d > /tmp/build.sh && chmod +x /tmp/build.sh"],
       {
         stdin: Buffer.from(scriptBase64),
         stdout: "pipe",

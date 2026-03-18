@@ -23,7 +23,7 @@ export function sshExec(
       log.debug("SSH exec", { host, command: truncate(command) })
 
       const proc = Bun.spawn(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "-p", String(port), `agent@${host}`, command],
+        ["ssh", "-o", "StrictHostKeyChecking=no", "-p", String(port), `root@${host}`, command],
         { stdout: "pipe", stderr: "pipe" },
       )
 
@@ -97,7 +97,7 @@ export function sshExecStreaming(
       log.debug("SSH exec streaming", { host, command: truncate(command) })
 
       const proc = Bun.spawn(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "-p", String(port), `agent@${host}`, command],
+        ["ssh", "-o", "StrictHostKeyChecking=no", "-p", String(port), `root@${host}`, command],
         { stdout: "pipe", stderr: "pipe" },
       )
 
