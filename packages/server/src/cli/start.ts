@@ -100,6 +100,7 @@ export async function start(): Promise<void> {
           createTunnel({
             vmIp,
             sshPort,
+            user: VM_USER,
             remoteOpencodePort: ports.opencodeVmPort,
             remotePreviewPort: ports.previewVmPort,
           }),

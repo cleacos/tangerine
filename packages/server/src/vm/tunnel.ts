@@ -2,6 +2,7 @@ import type { Subprocess } from "bun";
 import { createServer } from "node:net";
 import { Effect } from "effect";
 import { TunnelError } from "../errors";
+import { VM_USER } from "../config";
 
 export interface SessionTunnel {
   vmIp: string;
@@ -20,7 +21,7 @@ export function createTunnel(opts: {
 }): Effect.Effect<SessionTunnel, TunnelError> {
   return Effect.tryPromise({
     try: async () => {
-      const user = opts.user ?? "agent";
+      const user = opts.user ?? VM_USER;
       const remoteOpencodePort = opts.remoteOpencodePort ?? 4096;
 
       const [opencodePort, previewPort] = await Promise.all([
