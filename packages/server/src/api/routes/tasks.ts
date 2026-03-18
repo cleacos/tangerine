@@ -3,8 +3,8 @@ import { Hono } from "hono"
 import type { AppDeps } from "../app"
 import { mapTaskRow } from "../helpers"
 import { runEffect, runEffectVoid } from "../effect-helpers"
-import { getTask, listTasks, updateTask } from "../../db/queries"
-import { TaskNotFoundError } from "../../errors"
+import { getTask, listTasks, updateTask, deleteTask } from "../../db/queries"
+import { TaskNotFoundError, TaskNotTerminalError } from "../../errors"
 
 export function taskRoutes(deps: AppDeps): Hono {
   const app = new Hono()
@@ -85,6 +85,22 @@ export function taskRoutes(deps: AppDeps): Hono {
   app.post("/:id/done", (c) => {
     return runEffectVoid(c,
       deps.taskManager.completeTask(c.req.param("id"))
+    )
+  })
+
+  // Delete a terminal task (done/failed/cancelled) with cascading cleanup
+  app.delete("/:id", (c) => {
+    const taskId = c.req.param("id")
+    return runEffectVoid(c,
+      Effect.gen(function* () {
+        const task = yield* getTask(deps.db, taskId)
+        if (!task) return yield* Effect.fail(new TaskNotFoundError({ taskId }))
+        const terminal = new Set(["done", "failed", "cancelled"])
+        if (!terminal.has(task.status)) {
+          return yield* Effect.fail(new TaskNotTerminalError({ taskId, status: task.status }))
+        }
+        yield* deleteTask(deps.db, taskId)
+      })
     )
   })
 

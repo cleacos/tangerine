@@ -39,10 +39,17 @@ export interface AppDeps {
   }
   pool: {
     getPoolStats(): Effect.Effect<unknown, TaggedError>
+    destroyVm(vmId: string): Effect.Effect<void, TaggedError>
+    reconcile(): Effect.Effect<void, TaggedError>
   }
   imageBuild: {
     start(imageName: string): { ok: true } | { ok: false; reason: string }
+    startBase(): { ok: true } | { ok: false; reason: string }
     getStatus(): { status: "idle" } | { status: "building" | "success" | "failed"; imageName: string; startedAt: string; finishedAt?: string; error?: string }
+  }
+  configStore: {
+    read(): import("../config").RawConfig
+    write(config: import("../config").RawConfig): void
   }
   config: AppConfig
 }

@@ -9,6 +9,10 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 const DEFAULT_ERROR_MAP: Record<string, number> = {
   TaskNotFoundError: 404,
   VmNotFoundError: 404,
+  ProjectNotFoundError: 404,
+  ProjectExistsError: 409,
+  ConfigValidationError: 400,
+  TaskNotTerminalError: 400,
   PoolExhaustedError: 503,
   AgentError: 502,
   AgentConnectionError: 502,

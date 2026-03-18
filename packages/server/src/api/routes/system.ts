@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "fs"
 import { Effect } from "effect"
 import { Hono } from "hono"
 import type { AppDeps } from "../app"
-import { runEffect } from "../effect-helpers"
+import { runEffect, runEffectVoid } from "../effect-helpers"
 import { listImages } from "../../db/queries"
 import { querySystemLogs } from "../../system-log"
 import { buildLogPath } from "../../image/build"
@@ -39,6 +39,17 @@ export function systemRoutes(deps: AppDeps): Hono {
         }))
       })
     )
+  })
+
+  // Destroy a VM by ID
+  app.delete("/vms/:id", (c) => {
+    const vmId = c.req.param("id")
+    return runEffectVoid(c, deps.pool.destroyVm(vmId))
+  })
+
+  // Force pool reconciliation
+  app.post("/pool/reconcile", (c) => {
+    return runEffectVoid(c, deps.pool.reconcile())
   })
 
   // Returns the latest golden image for a project (or all if no project)
@@ -87,6 +98,15 @@ export function systemRoutes(deps: AppDeps): Hono {
     return c.json({ status: "building", imageName: project.image }, 202)
   })
 
+  // Build base image
+  app.post("/images/build-base", (c) => {
+    const result = deps.imageBuild.startBase()
+    if (!result.ok) {
+      return c.json({ error: result.reason }, 409)
+    }
+    return c.json({ status: "building", imageName: "base" }, 202)
+  })
+
   app.get("/images/build-status", (c) => {
     return c.json(deps.imageBuild.getStatus())
   })
@@ -121,6 +141,17 @@ export function systemRoutes(deps: AppDeps): Hono {
 
     const logs = querySystemLogs(deps.db, { level, logger, limit, since })
     return c.json(logs)
+  })
+
+  // Clear system logs
+  app.delete("/logs", (c) => {
+    deps.db.run("DELETE FROM system_logs")
+    return c.json({ ok: true })
+  })
+
+  // Read full config (no credentials)
+  app.get("/config", (c) => {
+    return c.json(deps.config.config)
   })
 
   return app

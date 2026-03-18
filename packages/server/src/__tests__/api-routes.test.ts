@@ -5,8 +5,30 @@ import { createTestDb } from "./helpers"
 import { createApp, type AppDeps } from "../api/app"
 import { createTask as dbCreateTask, updateTaskStatus } from "../db/queries"
 import type { TaskRow } from "../db/types"
+import type { RawConfig } from "../config"
 
-function createMockDeps(db: Database): AppDeps {
+function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"]["config"]>): AppDeps {
+  const configData = {
+    projects: [
+      { name: "test-project", repo: "test/repo", defaultBranch: "main", image: "test", setup: "echo ok" },
+    ],
+    integrations: {},
+    model: "openai/gpt-4o",
+    models: ["openai/gpt-4o"],
+    pool: {
+      maxPoolSize: 2,
+      minReady: 1,
+      idleTimeoutMs: 600_000,
+    },
+    ...configOverrides,
+  }
+
+  // In-memory config store for testing project CRUD
+  let rawConfig: RawConfig = {
+    projects: configData.projects.map((p) => ({ ...p })),
+    model: configData.model,
+  }
+
   return {
     db,
     taskManager: {
@@ -43,21 +65,23 @@ function createMockDeps(db: Database): AppDeps {
       getPoolStats() {
         return Effect.succeed({ ready: 2, assigned: 1, provisioning: 0, total: 3 })
       },
+      destroyVm(vmId) {
+        return Effect.sync(() => {
+          const vm = db.prepare("SELECT * FROM vms WHERE id = ?").get(vmId)
+          if (!vm) throw new Error(`VM ${vmId} not found`)
+          db.prepare("UPDATE vms SET status = 'destroyed' WHERE id = ?").run(vmId)
+        }).pipe(Effect.mapError((e) => ({ _tag: "VmNotFoundError" as const, message: String(e) })))
+      },
+      reconcile() {
+        return Effect.succeed(undefined as void)
+      },
+    },
+    configStore: {
+      read: () => rawConfig,
+      write: (config: RawConfig) => { rawConfig = config },
     },
     config: {
-      config: {
-        projects: [
-          { name: "test-project", repo: "test/repo", defaultBranch: "main", image: "test", setup: "echo ok" },
-        ],
-        integrations: {},
-        model: "openai/gpt-4o",
-        models: ["openai/gpt-4o"],
-        pool: {
-          maxPoolSize: 2,
-          minReady: 1,
-          idleTimeoutMs: 600_000,
-        },
-      },
+      config: configData,
       credentials: {
         opencodeAuthPath: null,
         anthropicApiKey: null,
@@ -67,6 +91,7 @@ function createMockDeps(db: Database): AppDeps {
     } satisfies AppDeps["config"],
     imageBuild: {
       start() { return { ok: true } },
+      startBase() { return { ok: true } },
       getStatus() { return { status: "idle" } },
     },
   }
@@ -86,13 +111,34 @@ function seedTask(db: Database, overrides?: Partial<Parameters<typeof dbCreateTa
   }))
 }
 
+function seedVm(db: Database, overrides?: Record<string, unknown>): { id: string } {
+  const id = `vm-${crypto.randomUUID().slice(0, 8)}`
+  db.prepare(`
+    INSERT INTO vms (id, label, provider, ip, ssh_port, status, snapshot_id, region, plan)
+    VALUES ($id, $label, $provider, $ip, $ssh_port, $status, $snapshot_id, $region, $plan)
+  `).run({
+    $id: id,
+    $label: id,
+    $provider: "lima",
+    $ip: "10.0.0.1",
+    $ssh_port: 22,
+    $status: "ready",
+    $snapshot_id: "snap-test",
+    $region: "local",
+    $plan: "4cpu-8gb",
+    ...overrides,
+  })
+  return { id }
+}
+
 describe("API routes", () => {
   let db: Database
+  let deps: AppDeps
   let app: ReturnType<typeof createApp>["app"]
 
   beforeEach(() => {
     db = createTestDb()
-    const deps = createMockDeps(db)
+    deps = createMockDeps(db)
     app = createApp(deps).app
   })
 
@@ -193,6 +239,34 @@ describe("API routes", () => {
     })
   })
 
+  describe("DELETE /api/tasks/:id", () => {
+    test("deletes a terminal task", async () => {
+      const row = seedTask(db)
+      Effect.runSync(updateTaskStatus(db, row.id, "done"))
+
+      const res = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}`, { method: "DELETE" }))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { ok: boolean }
+      expect(body.ok).toBe(true)
+
+      // Verify task is gone
+      const check = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}`))
+      expect(check.status).toBe(404)
+    })
+
+    test("returns 400 for non-terminal task", async () => {
+      const row = seedTask(db)
+      // status is 'created' (non-terminal)
+      const res = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}`, { method: "DELETE" }))
+      expect(res.status).toBe(400)
+    })
+
+    test("returns 404 for unknown task", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/tasks/nonexistent", { method: "DELETE" }))
+      expect(res.status).toBe(404)
+    })
+  })
+
   describe("GET /api/tasks/:id/messages", () => {
     test("returns empty messages for new task", async () => {
       const row = seedTask(db)
@@ -212,6 +286,177 @@ describe("API routes", () => {
         body: JSON.stringify({}),
       }))
       expect(res.status).toBe(400)
+    })
+  })
+
+  describe("DELETE /api/vms/:id", () => {
+    test("destroys a VM", async () => {
+      const vm = seedVm(db)
+      const res = await app.fetch(new Request(`http://localhost/api/vms/${vm.id}`, { method: "DELETE" }))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { ok: boolean }
+      expect(body.ok).toBe(true)
+    })
+
+    test("returns 500 for unknown VM", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/vms/nonexistent", { method: "DELETE" }))
+      expect(res.status).not.toBe(200)
+    })
+  })
+
+  describe("POST /api/pool/reconcile", () => {
+    test("triggers pool reconciliation", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/pool/reconcile", { method: "POST" }))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { ok: boolean }
+      expect(body.ok).toBe(true)
+    })
+  })
+
+  describe("POST /api/images/build-base", () => {
+    test("starts base image build", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/images/build-base", { method: "POST" }))
+      expect(res.status).toBe(202)
+      const body = await res.json() as { status: string; imageName: string }
+      expect(body.status).toBe("building")
+      expect(body.imageName).toBe("base")
+    })
+  })
+
+  describe("GET /api/config", () => {
+    test("returns full config without credentials", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/config"))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { projects: unknown[]; model: string }
+      expect(body.projects).toHaveLength(1)
+      expect(body.model).toBe("openai/gpt-4o")
+      // Ensure no credential fields leak
+      expect("credentials" in body).toBe(false)
+    })
+  })
+
+  describe("DELETE /api/logs", () => {
+    test("clears system logs", async () => {
+      // Seed a log entry
+      db.run("INSERT INTO system_logs (level, logger, message, timestamp) VALUES ('info', 'test', 'hello', datetime('now'))")
+      const before = db.query("SELECT COUNT(*) as cnt FROM system_logs").get() as { cnt: number }
+      expect(before.cnt).toBeGreaterThan(0)
+
+      const res = await app.fetch(new Request("http://localhost/api/logs", { method: "DELETE" }))
+      expect(res.status).toBe(200)
+
+      const after = db.query("SELECT COUNT(*) as cnt FROM system_logs").get() as { cnt: number }
+      expect(after.cnt).toBe(0)
+    })
+  })
+
+  describe("POST /api/projects", () => {
+    test("registers a new project", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "new-project",
+          repo: "https://github.com/test/new",
+          image: "node-dev",
+          setup: "npm install",
+        }),
+      }))
+      expect(res.status).toBe(201)
+      const body = await res.json() as { name: string }
+      expect(body.name).toBe("new-project")
+
+      // Verify it appears in project list
+      expect(deps.config.config.projects).toHaveLength(2)
+    })
+
+    test("returns 409 for duplicate project", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "test-project",
+          repo: "test/repo",
+          image: "test",
+          setup: "echo ok",
+        }),
+      }))
+      expect(res.status).toBe(409)
+    })
+
+    test("returns 400 for invalid project config", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "bad" }),
+      }))
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe("PUT /api/projects/:name", () => {
+    test("updates a project", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/projects/test-project", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setup: "npm run dev" }),
+      }))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { name: string; setup: string }
+      expect(body.name).toBe("test-project")
+      expect(body.setup).toBe("npm run dev")
+    })
+
+    test("returns 404 for unknown project", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/projects/nonexistent", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setup: "npm run dev" }),
+      }))
+      expect(res.status).toBe(404)
+    })
+
+    test("name is immutable", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/projects/test-project", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "renamed" }),
+      }))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { name: string }
+      expect(body.name).toBe("test-project")
+    })
+  })
+
+  describe("DELETE /api/projects/:name", () => {
+    test("returns 400 when removing last project", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/projects/test-project", { method: "DELETE" }))
+      expect(res.status).toBe(400)
+    })
+
+    test("removes a project when multiple exist", async () => {
+      // Add a second project first
+      await app.fetch(new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "second-project",
+          repo: "https://github.com/test/second",
+          image: "node-dev",
+          setup: "npm install",
+        }),
+      }))
+      expect(deps.config.config.projects).toHaveLength(2)
+
+      const res = await app.fetch(new Request("http://localhost/api/projects/test-project", { method: "DELETE" }))
+      expect(res.status).toBe(200)
+      expect(deps.config.config.projects).toHaveLength(1)
+      expect(deps.config.config.projects[0]!.name).toBe("second-project")
+    })
+
+    test("returns 404 for unknown project", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/projects/nonexistent", { method: "DELETE" }))
+      expect(res.status).toBe(404)
     })
   })
 

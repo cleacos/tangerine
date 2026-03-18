@@ -220,6 +220,21 @@ export function listImages(db: Database): Effect.Effect<ImageRow[], DbError> {
   })
 }
 
+const TERMINAL_STATUSES = new Set(["done", "failed", "cancelled"])
+
+export function deleteTask(db: Database, id: string): Effect.Effect<void, DbError> {
+  return dbTry(() => {
+    const task = db.prepare("SELECT status FROM tasks WHERE id = ?").get(id) as { status: string } | null
+    if (!task) throw new Error(`Task ${id} not found`)
+    if (!TERMINAL_STATUSES.has(task.status)) {
+      throw new Error(`Task ${id} is not terminal (status: ${task.status})`)
+    }
+    db.prepare("DELETE FROM activity_log WHERE task_id = ?").run(id)
+    db.prepare("DELETE FROM session_logs WHERE task_id = ?").run(id)
+    db.prepare("DELETE FROM tasks WHERE id = ?").run(id)
+  })
+}
+
 export function pruneOldImages(db: Database, name: string, keepId: string): Effect.Effect<number, DbError> {
   return dbTry(() => {
     const stmt = db.prepare("DELETE FROM images WHERE name = ? AND id != ?")

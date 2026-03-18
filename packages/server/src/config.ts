@@ -1,10 +1,35 @@
-import { existsSync, readFileSync, mkdirSync } from "fs"
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { tangerineConfigSchema } from "@tangerine/shared"
 import type { TangerineConfig, ProjectConfig } from "@tangerine/shared"
 
 export const TANGERINE_HOME = join(homedir(), "tangerine")
+export const CONFIG_PATH = join(TANGERINE_HOME, "config.json")
+
+/** Raw config shape before Zod validation */
+export interface RawConfig {
+  projects?: Array<Record<string, unknown>>
+  model?: string
+  integrations?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+/** Read raw config from disk (pre-validation). Returns empty projects array if no file. */
+export function readRawConfig(): RawConfig {
+  mkdirSync(TANGERINE_HOME, { recursive: true })
+  if (!existsSync(CONFIG_PATH)) {
+    return { projects: [] }
+  }
+  const raw = readFileSync(CONFIG_PATH, "utf-8")
+  return JSON.parse(raw) as RawConfig
+}
+
+/** Write raw config to disk */
+export function writeRawConfig(config: RawConfig): void {
+  mkdirSync(TANGERINE_HOME, { recursive: true })
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n")
+}
 
 /** Path to OpenCode's credential store on the host */
 export const OPENCODE_AUTH_PATH = join(homedir(), ".local", "share", "opencode", "auth.json")

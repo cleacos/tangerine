@@ -15,3 +15,7 @@ export class AgentConnectionError extends Data.TaggedError("AgentConnectionError
 export class PromptError extends Data.TaggedError("PromptError")<{ message: string; taskId: string; cause?: unknown }> {}
 export class GitHubPollError extends Data.TaggedError("GitHubPollError")<{ message: string; statusCode?: number; cause?: unknown }> {}
 export class HealthCheckError extends Data.TaggedError("HealthCheckError")<{ message: string; taskId: string; reason: "tunnel_dead" | "opencode_dead" | "vm_dead" }> {}
+export class ProjectNotFoundError extends Data.TaggedError("ProjectNotFoundError")<{ name: string }> {}
+export class ProjectExistsError extends Data.TaggedError("ProjectExistsError")<{ name: string }> {}
+export class ConfigValidationError extends Data.TaggedError("ConfigValidationError")<{ message: string }> {}
+export class TaskNotTerminalError extends Data.TaggedError("TaskNotTerminalError")<{ taskId: string; status: string }> {}

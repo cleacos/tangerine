@@ -1,12 +1,8 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs"
-import { join } from "path"
-import { TANGERINE_HOME } from "../config.ts"
+import { readRawConfig, writeRawConfig, CONFIG_PATH } from "../config.ts"
 import { printTable } from "./helpers.ts"
 import { createLogger } from "../logger.ts"
 
 const log = createLogger("cli:project")
-
-const CONFIG_PATH = join(TANGERINE_HOME, "config.json")
 
 export async function runProject(argv: string[]): Promise<void> {
   const subcommand = argv[0]
@@ -61,27 +57,6 @@ Examples:
   }
 }
 
-interface RawConfig {
-  projects?: Array<Record<string, unknown>>
-  model?: string
-  integrations?: Record<string, unknown>
-  [key: string]: unknown
-}
-
-function readConfig(): RawConfig {
-  mkdirSync(TANGERINE_HOME, { recursive: true })
-  if (!existsSync(CONFIG_PATH)) {
-    return { projects: [] }
-  }
-  const raw = readFileSync(CONFIG_PATH, "utf-8")
-  return JSON.parse(raw) as RawConfig
-}
-
-function writeConfig(config: RawConfig): void {
-  mkdirSync(TANGERINE_HOME, { recursive: true })
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n")
-}
-
 async function addProject(argv: string[]): Promise<void> {
   const { parseArgs } = await import("./helpers.ts")
   const parsed = parseArgs(argv, {
@@ -106,7 +81,7 @@ async function addProject(argv: string[]): Promise<void> {
   const test = parsed.flags["test"]
   const extraPortsRaw = parsed.flags["extra-ports"]
 
-  const config = readConfig()
+  const config = readRawConfig()
 
   if (!config.projects) {
     config.projects = []
@@ -142,14 +117,14 @@ async function addProject(argv: string[]): Promise<void> {
   }
 
   config.projects.push(project)
-  writeConfig(config)
+  writeRawConfig(config)
 
   console.log(`Project "${name}" added to ${CONFIG_PATH}`)
   log.info("Project registered", { name, repo, image })
 }
 
 function listProjects(): void {
-  const config = readConfig()
+  const config = readRawConfig()
   const projects = config.projects ?? []
 
   if (projects.length === 0) {
@@ -174,7 +149,7 @@ function showProject(name: string | undefined): void {
     process.exit(1)
   }
 
-  const config = readConfig()
+  const config = readRawConfig()
   const projects = config.projects ?? []
   const project = projects.find((p) => p.name === name)
 
@@ -194,7 +169,7 @@ function removeProject(name: string | undefined): void {
     process.exit(1)
   }
 
-  const config = readConfig()
+  const config = readRawConfig()
   const projects = config.projects ?? []
   const index = projects.findIndex((p) => p.name === name)
 
@@ -205,7 +180,7 @@ function removeProject(name: string | undefined): void {
 
   projects.splice(index, 1)
   config.projects = projects
-  writeConfig(config)
+  writeRawConfig(config)
 
   console.log(`Project "${name}" removed.`)
   log.info("Project removed", { name })

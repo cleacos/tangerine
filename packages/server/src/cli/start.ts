@@ -3,9 +3,9 @@
 
 import { Effect } from "effect"
 import { createLogger } from "../logger"
-import { loadConfig, getProjectConfig, TANGERINE_HOME, VM_AUTH_PATH } from "../config"
+import { loadConfig, getProjectConfig, TANGERINE_HOME, VM_AUTH_PATH, readRawConfig, writeRawConfig } from "../config"
 import { getDb } from "../db/index"
-import { createTask as dbCreateTask, getTask, listTasks, updateTask } from "../db/queries"
+import { createTask as dbCreateTask, getTask, getVm, listTasks, updateTask, updateVmStatus } from "../db/queries"
 import { logActivity } from "../activity"
 import type { TaskRow } from "../db/types"
 import { VMPoolManager } from "../vm/pool"
@@ -21,9 +21,9 @@ import { createProvider } from "../vm/providers/index"
 import type { ProviderType } from "../vm/providers/index"
 import { createPoolConfig } from "../vm/pool-config"
 import { getOrCreateClient } from "../agent/client"
-import { SshError, AgentError, HealthCheckError } from "../errors"
+import { SshError, AgentError, HealthCheckError, VmNotFoundError } from "../errors"
 import { initSystemLog, cleanupSystemLogs } from "../system-log"
-import { startBuild, getBuildStatus } from "../image/build-service"
+import { startBuild, startBaseBuild, getBuildStatus } from "../image/build-service"
 
 const log = createLogger("cli")
 
@@ -174,6 +174,18 @@ export async function start(): Promise<void> {
         })),
     }
 
+    // Pool reconciliation as an Effect for the API endpoint
+    const reconcileEffect = Effect.tryPromise({
+      try: async () => {
+        const released = await Effect.runPromise(pool.releaseStaleVms())
+        if (released > 0) log.info("Released stale VMs", { count: released })
+        const reaped = await Effect.runPromise(pool.reapIdleVms())
+        if (reaped > 0) log.info("Reaped idle VMs", { count: reaped })
+        pool.ensureWarm()
+      },
+      catch: (e) => ({ _tag: "PoolError" as const, message: String(e) }),
+    })
+
     const deps: AppDeps = {
       db,
       taskManager: {
@@ -197,10 +209,36 @@ export async function start(): Promise<void> {
         onTaskEvent,
         onStatusChange,
       },
-      pool,
+      pool: {
+        getPoolStats: () => pool.getPoolStats(),
+        destroyVm: (vmId: string) =>
+          getVm(db, vmId).pipe(
+            Effect.flatMap((vm) => {
+              if (!vm) return Effect.fail(new VmNotFoundError({ vmId }))
+              return Effect.tryPromise({
+                try: async () => {
+                  await Effect.runPromise(provider.destroyInstance(vm.id))
+                  Effect.runSync(updateVmStatus(db, vm.id, "destroyed"))
+                },
+                catch: (e) => new VmNotFoundError({ vmId: String(e) }),
+              })
+            }),
+            Effect.mapError((e): { _tag: string; message?: string } => {
+              if (e instanceof VmNotFoundError) return { _tag: "VmNotFoundError", message: `VM ${vmId} not found` }
+              return { _tag: "ProviderError", message: String(e) }
+            }),
+            Effect.asVoid,
+          ),
+        reconcile: () => reconcileEffect,
+      },
       imageBuild: {
         start: startBuild,
+        startBase: startBaseBuild,
         getStatus: getBuildStatus,
+      },
+      configStore: {
+        read: readRawConfig,
+        write: writeRawConfig,
       },
       config,
     }
