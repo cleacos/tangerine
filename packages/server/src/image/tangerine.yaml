@@ -11,9 +11,11 @@ images:
 
 # Apple Virtualization.framework for better perf on macOS
 vmType: "vz"
-rosetta:
-  enabled: true
-  binfmt: true
+vmOpts:
+  vz:
+    rosetta:
+      enabled: true
+      binfmt: true
 
 cpus: 4
 memory: "8GiB"
