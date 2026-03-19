@@ -58,9 +58,15 @@ export function createClaudeCodeProvider(): AgentFactory {
             proc.stdout as ReadableStream<Uint8Array>,
             {
               onLine: (data) => {
-                const event = mapClaudeCodeEvent(data as Record<string, unknown>)
+                const raw = data as Record<string, unknown>
+                const event = mapClaudeCodeEvent(raw)
                 if (event) {
                   for (const cb of subscribers) cb(event)
+                }
+                // result event signals end of turn — emit idle after message.complete
+                if (raw.type === "result" && !raw.is_error) {
+                  const idle: AgentEvent = { kind: "status", status: "idle" }
+                  for (const cb of subscribers) cb(idle)
                 }
               },
               onError: (err) => {
