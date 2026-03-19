@@ -1,21 +1,17 @@
 import { useState, useRef, useEffect } from "react"
-import { useProject } from "../context/ProjectContext"
-import { formatModelName } from "../lib/format"
+import type { ProviderType } from "@tangerine/shared"
 
-interface ModelSelectorProps {
-  /** Override the model list (e.g. filtered by provider) */
-  models?: string[]
-  /** Override the currently selected model */
-  model?: string
-  /** Override the model change handler */
-  onModelChange?: (model: string) => void
+interface HarnessSelectorProps {
+  value: ProviderType
+  onChange: (value: ProviderType) => void
 }
 
-export function ModelSelector({ models: propModels, model: propModel, onModelChange }: ModelSelectorProps = {}) {
-  const ctx = useProject()
-  const models = propModels ?? ctx.models
-  const model = propModel ?? ctx.model
-  const setModel = onModelChange ?? ctx.setModel
+const harnesses: { value: ProviderType; label: string }[] = [
+  { value: "claude-code", label: "Claude Code" },
+  { value: "opencode", label: "OpenCode" },
+]
+
+export function HarnessSelector({ value, onChange }: HarnessSelectorProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -30,18 +26,18 @@ export function ModelSelector({ models: propModels, model: propModel, onModelCha
     return () => document.removeEventListener("mousedown", handleClick)
   }, [open])
 
-  if (!model || !models.length) return null
+  const current = harnesses.find((h) => h.value === value) ?? harnesses[0]!
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-1 transition hover:bg-surface-secondary"
+        className="flex items-center gap-1.5 rounded-md border border-edge bg-surface-secondary px-2 py-1 transition hover:bg-neutral-200"
       >
-        <svg className="h-3 w-3 text-fg-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+        <svg className="h-3 w-3 text-fg-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="m5.25 4.5 7.5 7.5-7.5 7.5m6 0h6.75" />
         </svg>
-        <span className="text-[11px] font-medium text-fg">{formatModelName(model)}</span>
+        <span className="text-[11px] font-medium text-fg">{current.label}</span>
         <svg
           className={`h-2.5 w-2.5 text-fg-muted transition-transform ${open ? "rotate-180" : ""}`}
           fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
@@ -50,22 +46,27 @@ export function ModelSelector({ models: propModels, model: propModel, onModelCha
         </svg>
       </button>
 
-      {open && models.length > 0 && (
-        <div className="absolute left-0 top-full z-50 mt-1 max-h-[240px] min-w-[240px] overflow-y-auto rounded-lg border border-edge bg-white shadow-lg md:bottom-full md:top-auto md:mb-1 md:mt-0 md:max-h-[300px]">
-          {models.map((m) => {
-            const isActive = m === model
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-lg border border-edge bg-white shadow-lg md:bottom-full md:top-auto md:mb-1 md:mt-0">
+          {harnesses.map((h) => {
+            const isActive = h.value === value
             return (
               <button
-                key={m}
+                key={h.value}
                 onClick={() => {
-                  setModel(m)
+                  onChange(h.value)
                   setOpen(false)
                 }}
                 className={`flex w-full items-center justify-between px-3 py-2 text-left text-[12px] transition ${
                   isActive ? "bg-surface-secondary font-medium text-fg" : "text-neutral-600 hover:bg-surface"
                 }`}
               >
-                <span>{formatModelName(m)}</span>
+                <div className="flex items-center gap-2">
+                  <svg className="h-3 w-3 text-fg-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m5.25 4.5 7.5 7.5-7.5 7.5m6 0h6.75" />
+                  </svg>
+                  <span>{h.label}</span>
+                </div>
                 {isActive && (
                   <svg className="h-3 w-3 text-fg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />

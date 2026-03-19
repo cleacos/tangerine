@@ -1,11 +1,12 @@
 import { existsSync, readFileSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
+import type { ProviderType } from "./agent/provider"
 
 const OPENCODE_MODELS_CACHE = join(homedir(), ".cache", "opencode", "models.json")
 const OPENCODE_AUTH_PATH = join(homedir(), ".local", "share", "opencode", "auth.json")
 
-interface ModelInfo {
+export interface ModelInfo {
   id: string
   name: string
   provider: string
@@ -18,6 +19,13 @@ interface ProviderEntry {
   env?: string[]
   models: Record<string, { id: string; name?: string }>
 }
+
+/** Known models that Claude Code CLI can use directly */
+const CLAUDE_CODE_MODELS: ModelInfo[] = [
+  { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic", providerName: "Anthropic" },
+  { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", provider: "anthropic", providerName: "Anthropic" },
+  { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic", providerName: "Anthropic" },
+]
 
 /** Read OpenCode's models cache and auth to discover available models */
 export function discoverModels(): ModelInfo[] {
@@ -64,4 +72,20 @@ export function discoverModels(): ModelInfo[] {
   }
 
   return models
+}
+
+/** Discover models available for Claude Code CLI (requires Anthropic credentials) */
+export function discoverClaudeCodeModels(): ModelInfo[] {
+  const hasApiKey = !!process.env["ANTHROPIC_API_KEY"]
+  const hasOAuthToken = !!process.env["CLAUDE_CODE_OAUTH_TOKEN"]
+  if (!hasApiKey && !hasOAuthToken) return []
+  return CLAUDE_CODE_MODELS
+}
+
+/** Discover models grouped by harness (provider type) */
+export function discoverModelsByProvider(): Record<ProviderType, ModelInfo[]> {
+  return {
+    opencode: discoverModels(),
+    "claude-code": discoverClaudeCodeModels(),
+  }
 }

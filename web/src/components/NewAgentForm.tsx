@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom"
 import type { ProviderType } from "@tangerine/shared"
 import { useProject } from "../context/ProjectContext"
 import { ModelSelector } from "./ModelSelector"
+import { HarnessSelector } from "./HarnessSelector"
+import { formatModelName } from "../lib/format"
 
 interface NewAgentFormProps {
   onSubmit: (data: { projectId: string; title: string; description?: string; branch?: string; provider?: string }) => void
@@ -15,7 +17,7 @@ const suggestedTasks = [
   { icon: "sparkles", label: "Update deps" },
 ]
 
-/* ── Toggle row ── */
+/* -- Toggle row -- */
 
 function ToggleRow({ icon, label, defaultOn }: { icon: string; label: string; defaultOn?: boolean }) {
   const [on, setOn] = useState(defaultOn ?? false)
@@ -51,7 +53,7 @@ function ToggleRow({ icon, label, defaultOn }: { icon: string; label: string; de
   )
 }
 
-/* ── Suggested task icon ── */
+/* -- Suggested task icon -- */
 
 function TaskIcon({ icon }: { icon: string }) {
   const cls = "h-3 w-3 text-fg-muted"
@@ -67,15 +69,31 @@ function TaskIcon({ icon }: { icon: string }) {
   }
 }
 
-/* ── Main form ── */
+/* -- Main form -- */
 
 export function NewAgentForm({ onSubmit }: NewAgentFormProps) {
   const navigate = useNavigate()
-  const { current } = useProject()
+  const { current, modelsByProvider } = useProject()
   const [description, setDescription] = useState("")
-  const [provider, setProvider] = useState<ProviderType>("opencode")
+  const [provider, setProvider] = useState<ProviderType>(current?.defaultProvider ?? "opencode")
+  const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const branch = current?.defaultBranch ?? "main"
+
+  // Models available for the selected harness
+  const providerModels = modelsByProvider[provider] ?? []
+  const activeModel = selectedModel && providerModels.includes(selectedModel)
+    ? selectedModel
+    : providerModels[0] ?? ""
+
+  const handleProviderChange = useCallback((p: ProviderType) => {
+    setProvider(p)
+    setSelectedModel(null) // reset model when switching harness
+  }, [])
+
+  const handleModelChange = useCallback((m: string) => {
+    setSelectedModel(m)
+  }, [])
 
   const handleSubmit = useCallback(() => {
     const trimmed = description.trim()
@@ -94,7 +112,7 @@ export function NewAgentForm({ onSubmit }: NewAgentFormProps) {
 
   return (
     <div className="flex h-full flex-1 flex-col bg-surface">
-      {/* Mobile header — hidden on desktop */}
+      {/* Mobile header -- hidden on desktop */}
       <div className="flex h-[52px] items-center gap-3 border-b border-edge px-4 md:hidden">
         <button onClick={() => navigate("/")} aria-label="Back" className="text-fg">
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -129,22 +147,18 @@ export function NewAgentForm({ onSubmit }: NewAgentFormProps) {
             {/* Desktop: inline controls below textarea */}
             <div className="hidden items-center justify-between border-t border-edge px-3 py-2.5 md:flex">
               <div className="flex items-center gap-2">
+                <HarnessSelector value={provider} onChange={handleProviderChange} />
                 <div className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-1">
                   <svg className="h-3 w-3 text-fg-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0-12.814a2.25 2.25 0 1 0 0-2.186m0 2.186a2.25 2.25 0 1 0 0 2.186" />
                   </svg>
                   <span className="text-[11px] text-fg">{branch}</span>
                 </div>
-                <ModelSelector />
-                <select
-                  value={provider}
-                  onChange={(e) => setProvider(e.target.value as ProviderType)}
-                  aria-label="Provider"
-                  className="rounded-md border border-edge bg-surface px-2 py-1 text-[11px] text-fg outline-none"
-                >
-                  <option value="opencode">OpenCode</option>
-                  <option value="claude-code">Claude Code</option>
-                </select>
+                <ModelSelector
+                  models={providerModels}
+                  model={activeModel}
+                  onModelChange={handleModelChange}
+                />
               </div>
               <button
                 onClick={handleSubmit}
@@ -159,7 +173,7 @@ export function NewAgentForm({ onSubmit }: NewAgentFormProps) {
             </div>
           </div>
 
-          {/* Mobile: branch/model chips + full-width start button */}
+          {/* Mobile: harness/branch/model chips + full-width start button */}
           <div className="flex flex-col gap-6 md:hidden">
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
@@ -170,13 +184,17 @@ export function NewAgentForm({ onSubmit }: NewAgentFormProps) {
                   <span className="text-[13px] text-fg">{branch}</span>
                 </div>
                 <div className="flex h-10 flex-1 items-center rounded-lg border border-edge bg-surface px-3">
-                  <ModelSelector />
+                  <ModelSelector
+                    models={providerModels}
+                    model={activeModel}
+                    onModelChange={handleModelChange}
+                  />
                 </div>
               </div>
               <select
                 value={provider}
-                onChange={(e) => setProvider(e.target.value as ProviderType)}
-                aria-label="Provider"
+                onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
+                aria-label="Harness"
                 className="h-10 w-full rounded-lg border border-edge bg-surface px-3 text-[13px] text-fg outline-none"
               >
                 <option value="opencode">OpenCode</option>
@@ -195,10 +213,10 @@ export function NewAgentForm({ onSubmit }: NewAgentFormProps) {
             </button>
           </div>
 
-          {/* Divider — mobile only */}
+          {/* Divider -- mobile only */}
           <div className="h-px bg-edge md:hidden" />
 
-          {/* Suggested tasks — desktop: flex-wrap with icons, mobile: 2x2 grid */}
+          {/* Suggested tasks -- desktop: flex-wrap with icons, mobile: 2x2 grid */}
           <div className="flex flex-col gap-3">
             <span className="text-[12px] font-medium text-fg-muted md:text-[12px]">Suggested tasks</span>
             {/* Desktop */}
@@ -241,7 +259,7 @@ export function NewAgentForm({ onSubmit }: NewAgentFormProps) {
             </div>
           </div>
 
-          {/* Configuration — mobile only */}
+          {/* Configuration -- mobile only */}
           <div className="flex flex-col gap-3 pb-8 md:hidden">
             <span className="text-[13px] font-medium text-fg-muted">Configuration</span>
             <ToggleRow icon="terminal" label="Terminal access" defaultOn />

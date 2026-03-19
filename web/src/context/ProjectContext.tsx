@@ -8,6 +8,7 @@ interface ProjectContextValue {
   current: ProjectConfig | null
   model: string
   models: string[]
+  modelsByProvider: Record<string, string[]>
   setModel: (model: string) => void
   switchProject: (name: string) => void
   loading: boolean
@@ -18,6 +19,7 @@ const ProjectContext = createContext<ProjectContextValue>({
   current: null,
   model: "",
   models: [],
+  modelsByProvider: {},
   setModel: () => {},
   switchProject: () => {},
   loading: true,
@@ -28,6 +30,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<ProjectConfig[]>([])
   const [globalModel, setGlobalModel] = useState("")
   const [models, setModels] = useState<string[]>([])
+  const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({})
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -37,6 +40,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         setProjects(data.projects)
         setGlobalModel(data.model)
         setModels(data.models ?? [])
+        setModelsByProvider(data.modelsByProvider ?? {})
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -66,7 +70,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [loading, projects, projectParam, switchProject])
 
   return (
-    <ProjectContext.Provider value={{ projects, current, model, models, setModel: setSelectedModel, switchProject, loading }}>
+    <ProjectContext.Provider value={{ projects, current, model, models, modelsByProvider, setModel: setSelectedModel, switchProject, loading }}>
       {children}
     </ProjectContext.Provider>
   )

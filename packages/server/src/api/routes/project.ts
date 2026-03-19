@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { Hono } from "hono"
 import type { AppDeps } from "../app"
 import { runEffect, runEffectVoid } from "../effect-helpers"
-import { discoverModels } from "../../models"
+import { discoverModels, discoverModelsByProvider } from "../../models"
 import { projectConfigSchema, tangerineConfigSchema } from "@tangerine/shared"
 import { ProjectNotFoundError, ProjectExistsError, ConfigValidationError } from "../../errors"
 
@@ -18,10 +18,18 @@ export function projectRoutes(deps: AppDeps): Hono {
       ? discovered.map((m) => m.id)
       : configModels
 
+    // Per-harness model lists
+    const byProvider = discoverModelsByProvider()
+    const modelsByProvider: Record<string, string[]> = {
+      opencode: byProvider.opencode.map((m) => m.id),
+      "claude-code": byProvider["claude-code"].map((m) => m.id),
+    }
+
     return c.json({
       projects: deps.config.config.projects,
       model: deps.config.config.model,
       models,
+      modelsByProvider,
     })
   })
 

@@ -44,8 +44,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function fetchProjects(): Promise<{ projects: ProjectConfig[]; model: string; models: string[] }> {
-  return request<{ projects: ProjectConfig[]; model: string; models: string[] }>("/api/projects")
+export async function fetchProjects(): Promise<{
+  projects: ProjectConfig[]
+  model: string
+  models: string[]
+  modelsByProvider: Record<string, string[]>
+}> {
+  return request<{
+    projects: ProjectConfig[]
+    model: string
+    models: string[]
+    modelsByProvider: Record<string, string[]>
+  }>("/api/projects")
 }
 
 export async function fetchTasks(filter?: { status?: string; project?: string; search?: string }): Promise<Task[]> {
