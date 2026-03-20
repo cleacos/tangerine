@@ -10,6 +10,7 @@ interface ChatPanelProps {
   taskTitle?: string
   branch?: string
   prUrl?: string
+  model?: string | null
   onSend: (text: string) => void
   onAbort: () => void
   onToggleActivity?: () => void
@@ -23,6 +24,7 @@ export function ChatPanel({
   taskTitle,
   branch,
   prUrl,
+  model,
   onSend,
   onAbort,
   onToggleActivity,
@@ -130,6 +132,7 @@ export function ChatPanel({
         queueLength={queueLength}
         isWorking={agentStatus === "working"}
         onAbort={onAbort}
+        model={model}
       />
     </div>
   )

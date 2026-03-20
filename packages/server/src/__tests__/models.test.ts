@@ -35,24 +35,18 @@ describe("discoverModels", () => {
 })
 
 describe("discoverClaudeCodeModels", () => {
-  test("returns claude models when ANTHROPIC_API_KEY is set", () => {
-    // ANTHROPIC_API_KEY is set in test env
+  test("always returns known claude models", () => {
     const models = discoverClaudeCodeModels()
-    if (process.env["ANTHROPIC_API_KEY"] || process.env["CLAUDE_CODE_OAUTH_TOKEN"]) {
-      expect(models.length).toBeGreaterThan(0)
-      for (const model of models) {
-        expect(model.id).toMatch(/^claude-/)
-        expect(model.provider).toBe("anthropic")
-        expect(model.name).toBeTruthy()
-      }
-    } else {
-      expect(models).toEqual([])
+    expect(models.length).toBeGreaterThan(0)
+    for (const model of models) {
+      expect(model.id).toMatch(/^claude-/)
+      expect(model.provider).toBe("anthropic")
+      expect(model.name).toBeTruthy()
     }
   })
 
   test("includes known claude models", () => {
     const models = discoverClaudeCodeModels()
-    if (models.length === 0) return // no credentials available
     const ids = models.map((m) => m.id)
     expect(ids).toContain("claude-opus-4-6")
     expect(ids).toContain("claude-sonnet-4-6")

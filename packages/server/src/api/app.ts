@@ -47,6 +47,7 @@ export interface AppDeps {
     startBase(): { ok: true } | { ok: false; reason: string }
     getStatus(): { status: "idle" } | { status: "building" | "success" | "failed"; imageName: string; startedAt: string; finishedAt?: string; error?: string }
   }
+  sshExec(host: string, port: number, command: string): Effect.Effect<string, TaggedError>
   devServer: {
     start(taskId: string): Effect.Effect<void, TaggedError>
     stop(taskId: string): Effect.Effect<void, TaggedError>

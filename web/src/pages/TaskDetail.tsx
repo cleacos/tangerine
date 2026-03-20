@@ -106,6 +106,7 @@ export function TaskDetail() {
             taskTitle={task.title}
             branch={task.branch ?? undefined}
             prUrl={task.prUrl ?? undefined}
+            model={task.model}
             onSend={session.sendPrompt}
             onAbort={session.abort}
             onToggleActivity={() => setShowActivity(!showActivity)}

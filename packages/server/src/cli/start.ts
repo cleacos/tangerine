@@ -161,6 +161,9 @@ export async function start(): Promise<void> {
           // Store handle for cleanup/abort
           agentHandles.set(taskId, session.agentHandle)
 
+          // Send initial prompt on first idle event (agent has finished initializing)
+          let initialPromptSent = false
+
           session.agentHandle.subscribe((event) => {
             switch (event.kind) {
               case "message.streaming": {
@@ -194,6 +197,25 @@ export async function start(): Promise<void> {
                   emitTaskEvent(taskId, { event: "agent.start" })
                 } else if (event.status === "idle") {
                   emitTaskEvent(taskId, { event: "agent.idle" })
+
+                  // Send task description as initial prompt once agent is ready (skip for reconnects)
+                  if (!initialPromptSent) {
+                    initialPromptSent = true
+                    const hasLogs = db.prepare("SELECT 1 FROM session_logs WHERE task_id = ? LIMIT 1").get(taskId)
+                    if (hasLogs) break
+                    const task = db.prepare("SELECT description, title FROM tasks WHERE id = ?").get(taskId) as { description: string | null; title: string } | null
+                    const initialPrompt = task?.description || task?.title
+                    if (initialPrompt) {
+                      Effect.runPromise(
+                        session.agentHandle.sendPrompt(initialPrompt).pipe(Effect.catchAll(() => Effect.void))
+                      )
+                      Effect.runPromise(
+                        insertSessionLog(db, { task_id: taskId, role: "user", content: initialPrompt }).pipe(
+                          Effect.catchAll(() => Effect.void)
+                        )
+                      )
+                    }
+                  }
                 }
                 break
               }
@@ -242,6 +264,7 @@ export async function start(): Promise<void> {
             sourceId: params.sourceId,
             sourceUrl: params.sourceUrl,
             provider: params.provider,
+            model: params.model,
           }).pipe(
             Effect.mapError((e) => ({ _tag: "TaskError" as const, message: e.message }))
           ),
@@ -376,6 +399,10 @@ export async function start(): Promise<void> {
             }
           }).pipe(Effect.catchAll(() => Effect.succeed({ running: false }))),
       },
+      sshExec: (host, port, command) =>
+        sshExec(host, port, command).pipe(
+          Effect.mapError((e) => ({ _tag: "SshError" as const, message: e.message }))
+        ),
       configStore: {
         read: readRawConfig,
         write: writeRawConfig,

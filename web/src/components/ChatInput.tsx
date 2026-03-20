@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, type KeyboardEvent } from "react"
-import { ModelSelector } from "./ModelSelector"
+import { formatModelName } from "../lib/format"
 
 interface ChatInputProps {
   onSend: (text: string) => void
@@ -7,9 +7,10 @@ interface ChatInputProps {
   queueLength: number
   isWorking?: boolean
   onAbort?: () => void
+  model?: string | null
 }
 
-export function ChatInput({ onSend, disabled, queueLength, isWorking, onAbort }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, queueLength, isWorking, onAbort, model }: ChatInputProps) {
   const [text, setText] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -92,9 +93,16 @@ export function ChatInput({ onSend, disabled, queueLength, isWorking, onAbort }:
         </button>
       </div>
 
-      {/* Desktop: model selector + stop button */}
+      {/* Desktop: model label + stop button */}
       <div className="mt-2 hidden items-center justify-between md:flex">
-        <ModelSelector />
+        {model && (
+          <div className="flex items-center gap-1.5 text-[11px] text-fg-muted">
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+            </svg>
+            <span>{formatModelName(model)}</span>
+          </div>
+        )}
         {isWorking && (
           <button
             onClick={onAbort}

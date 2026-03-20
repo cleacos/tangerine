@@ -80,10 +80,12 @@ export function createClaudeCodeProvider(): AgentFactory {
               onLine: (data) => {
                 const raw = data as Record<string, unknown>
 
-                // Capture session_id from system init event
+                // Capture session_id from system init event and signal ready
                 if (raw.type === "system" && raw.subtype === "init" && typeof raw.session_id === "string") {
                   resolvedSessionId = raw.session_id
                   taskLog.info("Claude Code session resolved", { sessionId: resolvedSessionId })
+                  const idle: AgentEvent = { kind: "status", status: "idle" }
+                  for (const cb of subscribers) cb(idle)
                 }
 
                 const event = mapClaudeCodeEvent(raw)

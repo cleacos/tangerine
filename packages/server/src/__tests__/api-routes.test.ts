@@ -79,6 +79,7 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
         return Effect.succeed(undefined as void)
       },
     },
+    sshExec() { return Effect.succeed("") },
     devServer: {
       start() { return Effect.succeed(undefined as void) },
       stop() { return Effect.succeed(undefined as void) },
