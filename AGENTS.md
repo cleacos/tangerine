@@ -1,6 +1,6 @@
 # Tangerine
 
-Local background coding agent platform. VMs + OpenCode + web dashboard.
+Local background coding agent platform. VMs + multi-provider agents (OpenCode, Claude Code) + web dashboard.
 
 ## Setup
 
@@ -11,26 +11,27 @@ Local background coding agent platform. VMs + OpenCode + web dashboard.
 ## Structure
 
 ```
-src/
-  api/           # Hono server (REST + WebSocket + webhooks)
-  vm/            # VM layer (Lima provider, pool, SSH) — extracted from hal9999
-  agent/         # OpenCode SDK bridge
-  tasks/         # Task management, lifecycle
-  integrations/  # GitHub webhook handler
-  db/            # SQLite schema + queries
-  image/         # Golden image build scripts
-  types.ts
+packages/
+  shared/src/      # @tangerine/shared — types, config schema, constants
+  server/src/
+    api/           # Hono server (REST + WebSocket + webhooks)
+    vm/            # Per-project VMs (ProjectVmManager, Lima provider, SSH, tunnel)
+    agent/         # Agent providers (OpenCode, Claude Code) + provider abstraction
+    tasks/         # Task lifecycle, cleanup, health, retry, worktree setup
+    integrations/  # GitHub webhook handler
+    db/            # SQLite schema + queries
+    image/         # Golden image build (two-layer: base + project)
 web/
-  src/           # Vite + React dashboard
-specs/           # Architecture and design docs
+  src/             # Vite + React dashboard
+specs/             # Architecture and design docs
 ```
 
 ## Key Decisions
 
-- OpenCode in server mode as agent backend (not fire-and-forget)
-- Own chat UI built with OpenCode SDK (not OpenCode's web UI)
+- Multi-provider: OpenCode (HTTP/SSE) and Claude Code (stdin/stdout NDJSON) behind AgentProvider abstraction
+- VM-per-project with git worktrees for task isolation (not per-task pooled VMs)
 - Project-agnostic: each project defines golden image + setup + preview + test
-- VM layer extracted from hal9999 (Lima/Incus providers, pool, SSH)
+- VM layer extracted from hal9999 (Lima/Incus providers, SSH)
 - Multiplayer-ready data model (user_id nullable for v0)
 - Local-first, upgradeable to hosted
 
@@ -39,6 +40,7 @@ specs/           # Architecture and design docs
 - hal9999: `~/workspace/hal9999/` — VM provisioning source
 - orange: `~/workspace/orange/` — workflow engine (future integration)
 - OpenCode: agent backend (server mode + SDK)
+- Claude Code: agent backend (CLI stdin/stdout with stream-json)
 
 ## Rules
 
@@ -46,6 +48,7 @@ specs/           # Architecture and design docs
 - No `any`
 - Commits: `type(scope): msg`
 - Comments explain "why" not "what"
+- **Keep specs up to date**: When changing architecture, DB schema, APIs, or agent providers, update the corresponding file in `specs/`. Specs are the source of truth for design decisions — stale specs cause bugs.
 
 ## Web UI Rules
 
