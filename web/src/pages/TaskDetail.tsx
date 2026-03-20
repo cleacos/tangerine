@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import type { Task, ActivityEntry } from "@tangerine/shared"
 import { fetchTask, fetchActivities } from "../lib/api"
@@ -8,6 +8,7 @@ import { useTaskSearch } from "../hooks/useTaskSearch"
 import { useProject } from "../context/ProjectContext"
 import { useDiffFiles } from "../hooks/useDiffFiles"
 import { useMediaQuery } from "../hooks/useMediaQuery"
+import { useResizable } from "../hooks/useResizable"
 import { TasksSidebar } from "../components/TasksSidebar"
 import { ChatPanel } from "../components/ChatPanel"
 import { DiffView } from "../components/DiffView"
@@ -32,6 +33,23 @@ export function TaskDetail() {
   const [diffComments, setDiffComments] = useState<DiffComment[]>([])
 
   const isDesktop = useMediaQuery("(min-width: 768px)")
+  const [chatWidth, setChatWidth] = useState(480)
+  const [activityWidth, setActivityWidth] = useState(250)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const MIN_PANE = 200
+
+  const chatResize = useResizable({
+    onResize: useCallback((delta: number) => {
+      setChatWidth((w) => Math.max(MIN_PANE, w + delta))
+    }, []),
+  })
+
+  const activityResize = useResizable({
+    onResize: useCallback((delta: number) => {
+      setActivityWidth((w) => Math.max(MIN_PANE, w - delta))
+    }, []),
+  })
 
   const togglePane = useCallback((pane: PaneId) => {
     setMobilePane(pane)
@@ -140,10 +158,8 @@ export function TaskDetail() {
   const showDiff = isDesktop ? visiblePanes.has("diff") : mobilePane === "diff"
   const showActivity = isDesktop ? visiblePanes.has("activity") : mobilePane === "activity"
 
-  // Pane width: fluid when solo, fixed when sharing space
   const visibleCount = isDesktop ? visiblePanes.size : 1
-  const chatWidthClass = visibleCount === 1 ? "flex-1" : visibleCount === 3 ? "w-[350px] shrink-0" : "w-[480px] shrink-0"
-  const activityWidthClass = visibleCount === 1 ? "flex-1" : "w-[250px] shrink-0"
+  const isSolo = visibleCount === 1
 
   return (
     <div className="flex h-full">
@@ -226,10 +242,13 @@ export function TaskDetail() {
         </div>
 
         {/* Pane content */}
-        <div className="flex min-h-0 flex-1">
+        <div ref={containerRef} className="flex min-h-0 flex-1">
           {/* Chat pane */}
           {showChat && (
-            <div className={`flex min-w-0 flex-col ${chatWidthClass} ${showChat && (showDiff || showActivity) ? "md:border-r md:border-edge" : ""}`}>
+            <div
+              className="flex min-w-0 flex-col"
+              style={isSolo ? undefined : { width: chatWidth, flexShrink: 0 }}
+            >
               <ChatPanel
                 messages={session.messages}
                 agentStatus={session.agentStatus}
@@ -241,9 +260,14 @@ export function TaskDetail() {
             </div>
           )}
 
-          {/* Diff pane — container query switches sidebar from right to bottom */}
+          {/* Resize handle: chat | diff/activity */}
+          {showChat && (showDiff || showActivity) && isDesktop && (
+            <ResizeHandle onMouseDown={chatResize.onMouseDown} />
+          )}
+
+          {/* Diff pane */}
           {showDiff && (
-            <div className={`@container/diff flex min-w-0 flex-1 flex-col ${showDiff && showActivity ? "md:border-r md:border-edge" : ""}`}>
+            <div className="@container/diff flex min-w-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1 flex-col @min-[700px]/diff:flex-row">
                 <div className="min-w-0 flex-1 overflow-y-auto">
                   {diffFiles.length > 0 ? (
@@ -267,9 +291,17 @@ export function TaskDetail() {
             </div>
           )}
 
+          {/* Resize handle: diff/chat | activity */}
+          {showActivity && (showChat || showDiff) && isDesktop && (
+            <ResizeHandle onMouseDown={activityResize.onMouseDown} />
+          )}
+
           {/* Activity pane */}
           {showActivity && (
-            <div className={`flex flex-col bg-neutral-100 ${activityWidthClass}`}>
+            <div
+              className="flex flex-col bg-neutral-100"
+              style={isSolo ? undefined : { width: activityWidth, flexShrink: 0 }}
+            >
               <div className="flex h-11 items-center border-b border-edge px-4">
                 <span className="text-[13px] font-semibold text-fg">Activity</span>
               </div>
@@ -280,6 +312,17 @@ export function TaskDetail() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="flex w-0.5 shrink-0 cursor-col-resize bg-edge transition-colors hover:bg-blue-400"
+    >
+      <span />
     </div>
   )
 }
