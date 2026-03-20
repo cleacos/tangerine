@@ -140,11 +140,10 @@ export function TaskDetail() {
   const showDiff = isDesktop ? visiblePanes.has("diff") : mobilePane === "diff"
   const showActivity = isDesktop ? visiblePanes.has("activity") : mobilePane === "activity"
 
-  // Desktop pane width logic
-  const paneCount = visiblePanes.size
-  const chatWidthClass = isDesktop
-    ? (paneCount === 1 ? "flex-1" : paneCount === 3 ? "w-[350px] shrink-0" : "w-[480px] shrink-0")
-    : "w-full"
+  // Pane width: fluid when solo, fixed when sharing space
+  const visibleCount = isDesktop ? visiblePanes.size : 1
+  const chatWidthClass = visibleCount === 1 ? "flex-1" : visibleCount === 3 ? "w-[350px] shrink-0" : "w-[480px] shrink-0"
+  const activityWidthClass = visibleCount === 1 ? "flex-1" : "w-[250px] shrink-0"
 
   return (
     <div className="flex h-full">
@@ -270,7 +269,7 @@ export function TaskDetail() {
 
           {/* Activity pane */}
           {showActivity && (
-            <div className="flex w-full flex-col bg-neutral-100 md:w-[250px] md:shrink-0">
+            <div className={`flex flex-col bg-neutral-100 ${activityWidthClass}`}>
               <div className="flex h-11 items-center border-b border-edge px-4">
                 <span className="text-[13px] font-semibold text-fg">Activity</span>
               </div>
