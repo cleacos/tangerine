@@ -19,7 +19,7 @@ export function getDb(path?: string): Database {
   db.exec(SCHEMA)
 
   // Migrations for existing databases
-  try { db.exec("ALTER TABLE tasks ADD COLUMN model TEXT") } catch {}
+  try { db.exec("ALTER TABLE tasks ADD COLUMN model TEXT") } catch { /* column already exists */ }
 
   instance = db
   return db

@@ -9,7 +9,7 @@ import type { TaskRow } from "../db/types"
 function utc(ts: string | null): string | null {
   if (!ts) return null
   // Already has timezone info (Z or +offset or T...Z from ISO strings)
-  if (/[Z+\-]\d|T.*Z$/.test(ts)) return ts
+  if (/[Z+-]\d|T.*Z$/.test(ts)) return ts
   // Bare SQLite timestamp — append Z
   return ts.replace(" ", "T") + "Z"
 }
@@ -44,15 +44,15 @@ export function mapTaskRow(row: TaskRow): Task {
 }
 
 /** Normalize all timestamp-like string fields in an object to UTC (append Z) */
-export function normalizeTimestamps<T extends Record<string, unknown>>(row: T): T {
-  const result = { ...row }
+export function normalizeTimestamps<T extends object>(row: T): T {
+  const result = { ...row } as Record<string, unknown>
   for (const key of Object.keys(result)) {
     const val = result[key]
     if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(val)) {
-      ;(result as Record<string, unknown>)[key] = val.replace(" ", "T") + "Z"
+      result[key] = val.replace(" ", "T") + "Z"
     }
   }
-  return result
+  return result as T
 }
 
 /** Generates a unique ID using the built-in crypto API */
