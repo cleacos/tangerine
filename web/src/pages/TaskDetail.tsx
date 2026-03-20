@@ -7,29 +7,67 @@ import { useSession } from "../hooks/useSession"
 import { useTaskSearch } from "../hooks/useTaskSearch"
 import { useProject } from "../context/ProjectContext"
 import { useDiffFiles } from "../hooks/useDiffFiles"
+import { useMediaQuery } from "../hooks/useMediaQuery"
 import { TasksSidebar } from "../components/TasksSidebar"
 import { ChatPanel } from "../components/ChatPanel"
-import { ActivityPanel, type PanelTab } from "../components/ActivityPanel"
 import { DiffView } from "../components/DiffView"
 import { ActivityList } from "../components/ActivityList"
-import type { DiffComment } from "../components/ChangesPanel"
+import { ChangesPanel as DiffSidebar, type DiffComment } from "../components/ChangesPanel"
 
-type MobileTab = "chat" | "changes" | "activities"
+type PaneId = "chat" | "diff" | "activity"
 
 export function TaskDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [task, setTask] = useState<Task | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showActivity, setShowActivity] = useState(true)
-  const [panelTab, setPanelTab] = useState<PanelTab>("activities")
-  const [mobileTab, setMobileTab] = useState<MobileTab>("chat")
+  const [visiblePanes, setVisiblePanes] = useState<Set<PaneId>>(new Set(["chat", "diff"]))
+  const [mobilePane, setMobilePane] = useState<PaneId>("chat")
 
   const { current } = useProject()
   const session = useSession(id ?? "")
   const [activities, setActivities] = useState<ActivityEntry[]>([])
   const { query, setQuery, tasks } = useTaskSearch(current?.name)
   const { files: diffFiles } = useDiffFiles(id ?? "")
+  const [diffComments, setDiffComments] = useState<DiffComment[]>([])
+
+  const isDesktop = useMediaQuery("(min-width: 768px)")
+
+  const togglePane = useCallback((pane: PaneId) => {
+    setMobilePane(pane)
+    setVisiblePanes((prev) => {
+      const next = new Set(prev)
+      if (next.has(pane)) next.delete(pane)
+      else next.add(pane)
+      if (next.size === 0) next.add("chat")
+      return next
+    })
+  }, [])
+
+  const handleAddComment = useCallback((comment: DiffComment) => {
+    setDiffComments((prev) => [...prev, comment])
+  }, [])
+
+  const handleRemoveComment = useCallback((commentId: string) => {
+    setDiffComments((prev) => prev.filter((c) => c.id !== commentId))
+  }, [])
+
+  const handleScrollToFile = useCallback((path: string) => {
+    const el = document.getElementById(`diff-file-${path}`)
+    el?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [])
+
+  const handleSendComments = useCallback((comments: DiffComment[]) => {
+    const text = comments
+      .map((c) => {
+        const sideLabel = c.side === "left" ? "before change" : "after change"
+        return `[${c.filePath}:${c.lineRef} (${sideLabel})] ${c.text}`
+      })
+      .join("\n\n")
+    session.sendPrompt(text)
+    setDiffComments([])
+    setMobilePane("chat")
+  }, [session])
 
   useEffect(() => {
     if (!id) return
@@ -69,18 +107,6 @@ export function TaskDetail() {
     }
   }, [session.taskStatus])
 
-  const handleScrollToFile = useCallback((path: string) => {
-    const el = document.getElementById(`diff-file-${path}`)
-    el?.scrollIntoView({ behavior: "smooth", block: "start" })
-  }, [])
-
-  const handleSendComments = useCallback((comments: DiffComment[]) => {
-    const text = comments
-      .map((c) => `[${c.filePath}:${c.lineRef}] ${c.text}`)
-      .join("\n\n")
-    session.sendPrompt(text)
-  }, [session])
-
   if (loading) {
     return (
       <div className="flex h-full">
@@ -109,89 +135,175 @@ export function TaskDetail() {
 
   const { color: statusColor, label: statusLabel } = getStatusConfig(task.status)
 
+  // Determine which panes are actually shown
+  const showChat = isDesktop ? visiblePanes.has("chat") : mobilePane === "chat"
+  const showDiff = isDesktop ? visiblePanes.has("diff") : mobilePane === "diff"
+  const showActivity = isDesktop ? visiblePanes.has("activity") : mobilePane === "activity"
+
+  // Desktop pane width logic
+  const paneCount = visiblePanes.size
+  const chatWidthClass = isDesktop
+    ? (paneCount === 1 ? "flex-1" : paneCount === 3 ? "w-[350px] shrink-0" : "w-[480px] shrink-0")
+    : "w-full"
+
   return (
     <div className="flex h-full">
-      {/* Desktop layout */}
-      <div className="hidden h-full w-full md:flex">
+      {/* Sidebar — desktop only */}
+      <div className="hidden md:block">
         <TasksSidebar tasks={tasks} searchQuery={query} onSearchChange={setQuery} onNewAgent={() => navigate("/")} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          {panelTab === "changes" && diffFiles.length > 0 ? (
-            <DiffView files={diffFiles} />
-          ) : (
-            <ChatPanel
-              messages={session.messages}
-              agentStatus={session.agentStatus}
-              queueLength={session.queueLength}
-              taskTitle={task.title}
-              branch={task.branch ?? undefined}
-              prUrl={task.prUrl ?? undefined}
-              model={task.model}
-              onSend={session.sendPrompt}
-              onAbort={session.abort}
-              onToggleActivity={() => setShowActivity(!showActivity)}
-              showActivityToggle
-            />
-          )}
-        </div>
-        {showActivity && (
-          <ActivityPanel
-            taskId={id!}
-            diffFiles={diffFiles}
-            activeTab={panelTab}
-            onTabChange={setPanelTab}
-            onCollapse={() => setShowActivity(false)}
-            onScrollToFile={handleScrollToFile}
-            onSendComments={handleSendComments}
-          />
-        )}
       </div>
 
-      {/* Mobile layout */}
-      <div className="flex h-full w-full flex-col md:hidden">
-        {/* Header */}
-        <div className="flex items-center gap-2 border-b border-edge bg-white px-4 py-2.5">
-          <button onClick={() => navigate("/")} aria-label="Back to runs" className="text-fg">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-            </svg>
-          </button>
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: statusColor }} />
-          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-fg">{task.title}</span>
-          <span className="shrink-0 text-[12px]" style={{ color: statusColor }}>{statusLabel}</span>
-        </div>
-
-        {/* View tabs */}
-        <div className="flex items-center gap-1 border-b border-edge bg-surface-secondary px-3 py-1" role="tablist">
-          {(["chat", "changes", "activities"] as const).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={mobileTab === t}
-              onClick={() => setMobileTab(t)}
-              className={`rounded-md px-3 py-1.5 text-[13px] font-medium transition ${
-                mobileTab === t ? "bg-white text-fg shadow-sm" : "text-fg-muted"
-              }`}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+      {/* Main column */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Task header — two rows on mobile (flex-col), one row on desktop (md:flex-row) */}
+        <div className="flex flex-col border-b border-edge md:h-12 md:flex-row md:items-center md:justify-between md:px-5">
+          {/* Row 1 / Left: back + task name + branch + status */}
+          <div className="flex h-11 min-w-0 items-center gap-2 px-3 md:h-auto md:flex-1 md:gap-3 md:px-0">
+            <button onClick={() => navigate("/")} aria-label="Back to runs" className="shrink-0 text-fg md:hidden">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+              </svg>
             </button>
-          ))}
+            <span className="min-w-0 truncate text-[14px] font-semibold text-fg">{task.title}</span>
+            {task.branch && (
+              <div className="hidden shrink-0 items-center gap-1 md:flex">
+                <svg className="h-3.5 w-3.5 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 3v12m0 0a3 3 0 1 0 3 3m-3-3a3 3 0 0 1 3 3m0 0h6a3 3 0 0 0 3-3V9m0 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                </svg>
+                <span className="font-mono text-[12px] text-neutral-500">{task.branch}</span>
+              </div>
+            )}
+            {task.prUrl && (
+              <a
+                href={task.prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden shrink-0 items-center gap-1 rounded bg-green-500/10 px-1.5 py-0.5 text-[10px] font-medium text-green-700 md:flex"
+              >
+                PR
+              </a>
+            )}
+            <span
+              className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+              style={{ backgroundColor: `color-mix(in srgb, ${statusColor} 10%, transparent)`, color: statusColor }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
+              {statusLabel}
+            </span>
+          </div>
+
+          {/* Row 2 / Right: pane toggles + divider + stop + more */}
+          <div className="flex h-9 shrink-0 items-center justify-end gap-2 px-3 pb-1 md:h-auto md:px-0 md:pb-0">
+            <div className="flex items-center gap-0.5 rounded-lg bg-neutral-100 p-[3px]">
+              <PaneToggle active={isDesktop ? visiblePanes.has("chat") : mobilePane === "chat"} onClick={() => togglePane("chat")} label="Chat">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </PaneToggle>
+              <PaneToggle active={isDesktop ? visiblePanes.has("diff") : mobilePane === "diff"} onClick={() => togglePane("diff")} label="Diff">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" />
+                  <path d="M13 6h3a2 2 0 0 1 2 2v7M11 18H8a2 2 0 0 1-2-2V9" />
+                </svg>
+              </PaneToggle>
+              <PaneToggle active={isDesktop ? visiblePanes.has("activity") : mobilePane === "activity"} onClick={() => togglePane("activity")} label="Activity">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                </svg>
+              </PaneToggle>
+            </div>
+            <div className="h-5 w-px bg-edge" />
+            <button className="flex h-8 w-8 items-center justify-center rounded-md bg-[#e7000b]" aria-label="Stop preview">
+              <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
+              </svg>
+            </button>
+            <button className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-secondary" aria-label="More options">
+              <svg className="h-4 w-4 text-fg-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Tab content */}
-        <div className="min-h-0 flex-1">
-          {mobileTab === "chat" && (
-            <ChatPanel
-              messages={session.messages}
-              agentStatus={session.agentStatus}
-              queueLength={session.queueLength}
-              onSend={session.sendPrompt}
-              onAbort={session.abort}
-            />
+        {/* Pane content */}
+        <div className="flex min-h-0 flex-1">
+          {/* Chat pane */}
+          {showChat && (
+            <div className={`flex min-w-0 flex-col ${chatWidthClass} ${showChat && (showDiff || showActivity) ? "md:border-r md:border-edge" : ""}`}>
+              <ChatPanel
+                messages={session.messages}
+                agentStatus={session.agentStatus}
+                queueLength={session.queueLength}
+                model={task.model}
+                onSend={session.sendPrompt}
+                onAbort={session.abort}
+              />
+            </div>
           )}
-          {mobileTab === "changes" && <DiffView files={diffFiles} />}
-          {mobileTab === "activities" && <ActivityList activities={activities} variant="timeline" />}
+
+          {/* Diff pane */}
+          {showDiff && (
+            <div className={`flex min-w-0 flex-1 flex-col ${showDiff && showActivity ? "md:border-r md:border-edge" : ""}`}>
+              <div className="flex min-h-0 flex-1">
+                <div className="min-w-0 flex-1 overflow-y-auto">
+                  {diffFiles.length > 0 ? (
+                    <DiffView files={diffFiles} onAddComment={handleAddComment} />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-[13px] text-fg-muted">
+                      No file changes yet
+                    </div>
+                  )}
+                </div>
+                {diffFiles.length > 0 && (
+                  <div className="hidden md:flex">
+                    <DiffSidebar
+                      files={diffFiles}
+                      comments={diffComments}
+                      onScrollToFile={handleScrollToFile}
+                      onRemoveComment={handleRemoveComment}
+                      onSendComments={handleSendComments}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Activity pane */}
+          {showActivity && (
+            <div className="flex w-full flex-col bg-neutral-100 md:w-[250px] md:shrink-0">
+              <div className="flex h-11 items-center border-b border-edge px-4">
+                <span className="text-[13px] font-semibold text-fg">Activity</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4">
+                <ActivityList activities={activities} variant="compact" />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
+  )
+}
+
+function PaneToggle({ active, onClick, label, children }: {
+  active: boolean
+  onClick: () => void
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className={`flex h-7 w-8 items-center justify-center rounded-md ${
+        active
+          ? "border border-edge bg-neutral-50 text-fg shadow-sm"
+          : "text-neutral-500"
+      }`}
+    >
+      {children}
+    </button>
   )
 }

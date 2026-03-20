@@ -184,6 +184,10 @@ export async function fetchBuildStatus(): Promise<BuildStatus> {
   return request<BuildStatus>("/api/images/build-status")
 }
 
+export async function deleteTask(id: string): Promise<void> {
+  return request<void>(`/api/tasks/${id}`, { method: "DELETE" })
+}
+
 export async function fetchBuildLog(project?: string, offset = 0): Promise<{ content: string; size: number }> {
   const params = new URLSearchParams()
   if (project) params.set("project", project)

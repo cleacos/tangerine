@@ -1,4 +1,3 @@
-import { useState } from "react"
 import type { DiffFile } from "../lib/api"
 import { getFileStats, fileName, fileDir } from "./DiffView"
 
@@ -6,34 +5,30 @@ export interface DiffComment {
   id: string
   filePath: string
   lineRef: string
+  side: "left" | "right"
   text: string
 }
 
 interface ChangesPanelProps {
   files: DiffFile[]
+  comments: DiffComment[]
+  onRemoveComment?: (id: string) => void
   onSendComments?: (comments: DiffComment[]) => void
   onScrollToFile?: (path: string) => void
 }
 
-export function ChangesPanel({ files, onSendComments, onScrollToFile }: ChangesPanelProps) {
-  const [comments, setComments] = useState<DiffComment[]>([])
-
-  const removeComment = (id: string) => {
-    setComments((prev) => prev.filter((c) => c.id !== id))
-  }
-
+export function ChangesPanel({ files, comments, onRemoveComment, onSendComments, onScrollToFile }: ChangesPanelProps) {
   const handleSendAll = () => {
     if (comments.length === 0) return
     onSendComments?.(comments)
-    setComments([])
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full w-[220px] shrink-0 flex-col border-l border-edge">
       {/* File list */}
       <div className="flex-1 overflow-y-auto">
-        <div className="flex h-7 items-center justify-between px-4">
-          <span className="font-mono text-[10px] font-medium tracking-wider text-fg-muted">FILES CHANGED</span>
+        <div className="flex h-11 items-center justify-between px-3">
+          <span className="text-[12px] font-semibold text-fg">Changed Files</span>
           <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-surface-secondary px-1.5 font-mono text-[10px] font-medium text-fg-muted">
             {files.length}
           </span>
@@ -77,7 +72,7 @@ export function ChangesPanel({ files, onSendComments, onScrollToFile }: ChangesP
                           <span className="text-[12px] font-medium text-fg">{fileName(comment.filePath)}</span>
                           <span className="rounded bg-surface-secondary px-1.5 py-0.5 text-[10px] font-medium text-fg-muted">{comment.lineRef}</span>
                         </div>
-                        <button onClick={() => removeComment(comment.id)} className="text-fg-faint hover:text-fg-muted">
+                        <button onClick={() => onRemoveComment?.(comment.id)} className="text-fg-faint hover:text-fg-muted">
                           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                           </svg>
