@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import type { Task, ActivityEntry } from "@tangerine/shared"
-import { fetchTask, fetchActivities } from "../lib/api"
+import { fetchTask, fetchActivities, changeModel } from "../lib/api"
 import { getStatusConfig } from "../lib/status"
 import { useSession } from "../hooks/useSession"
 import { useTaskSearch } from "../hooks/useTaskSearch"
@@ -25,7 +25,7 @@ export function TaskDetail() {
   const [visiblePanes, setVisiblePanes] = useState<Set<PaneId>>(new Set(["chat", "diff"]))
   const [mobilePane, setMobilePane] = useState<PaneId>("chat")
 
-  const { current } = useProject()
+  const { current, modelsByProvider } = useProject()
   const session = useSession(id ?? "")
   const [activities, setActivities] = useState<ActivityEntry[]>([])
   const { query, setQuery, tasks } = useTaskSearch(current?.name)
@@ -73,6 +73,18 @@ export function TaskDetail() {
     const el = document.getElementById(`diff-file-${path}`)
     el?.scrollIntoView({ behavior: "smooth", block: "start" })
   }, [])
+
+  const providerModels = task ? (modelsByProvider[task.provider] ?? []) : []
+
+  const handleModelChange = useCallback(async (model: string) => {
+    if (!id || !task) return
+    try {
+      await changeModel(id, model)
+      setTask((prev) => prev ? { ...prev, model } : prev)
+    } catch {
+      // TODO: error toast
+    }
+  }, [id, task])
 
   const handleSendComments = useCallback((comments: DiffComment[]) => {
     const text = comments
@@ -248,8 +260,10 @@ export function TaskDetail() {
                 agentStatus={session.agentStatus}
                 queueLength={session.queueLength}
                 model={task.model}
+                providerModels={providerModels}
                 onSend={session.sendPrompt}
                 onAbort={session.abort}
+                onModelChange={handleModelChange}
               />
             </div>
           )}
@@ -311,8 +325,10 @@ export function TaskDetail() {
                 agentStatus={session.agentStatus}
                 queueLength={session.queueLength}
                 model={task.model}
+                providerModels={providerModels}
                 onSend={session.sendPrompt}
                 onAbort={session.abort}
+                onModelChange={handleModelChange}
               />
             </div>
           )}

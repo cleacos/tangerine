@@ -56,6 +56,16 @@ export function sessionRoutes(deps: AppDeps): Hono {
     )
   })
 
+  app.post("/:id/model", async (c) => {
+    const body = await c.req.json<{ model?: string }>()
+    if (!body.model) {
+      return c.json({ error: "model is required" }, 400)
+    }
+    return runEffectVoid(c,
+      deps.taskManager.changeModel(c.req.param("id"), body.model)
+    )
+  })
+
   // Dev server control
   app.post("/:id/server/start", (c) => {
     return runEffectVoid(c, deps.devServer.start(c.req.param("id")))

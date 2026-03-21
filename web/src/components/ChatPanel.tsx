@@ -8,8 +8,10 @@ interface ChatPanelProps {
   agentStatus: "idle" | "working"
   queueLength: number
   model?: string | null
+  providerModels?: string[]
   onSend: (text: string) => void
   onAbort: () => void
+  onModelChange?: (model: string) => void
 }
 
 export function ChatPanel({
@@ -17,8 +19,10 @@ export function ChatPanel({
   agentStatus,
   queueLength,
   model,
+  providerModels,
   onSend,
   onAbort,
+  onModelChange,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -70,6 +74,8 @@ export function ChatPanel({
         isWorking={agentStatus === "working"}
         onAbort={onAbort}
         model={model}
+        providerModels={providerModels}
+        onModelChange={onModelChange}
       />
     </div>
   )

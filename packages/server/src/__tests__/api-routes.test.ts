@@ -61,6 +61,11 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
         return Effect.succeed(undefined as void)
       },
       abortTask() { return Effect.succeed(undefined as void) },
+      changeModel(taskId: string, model: string) {
+        return Effect.sync(() => {
+          db.prepare("UPDATE tasks SET model = ? WHERE id = ?").run(model, taskId)
+        })
+      },
       onTaskEvent() { return () => {} },
       onStatusChange() { return () => {} },
     },
@@ -334,6 +339,31 @@ describe("API routes", () => {
     test("returns 400 without text", async () => {
       const row = seedTask(db)
       const res = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}/prompt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }))
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe("POST /api/tasks/:id/model", () => {
+    test("changes model for a task", async () => {
+      const row = seedTask(db)
+      db.prepare("UPDATE tasks SET status = 'running' WHERE id = ?").run(row.id)
+      const res = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}/model`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-opus-4-6" }),
+      }))
+      expect(res.status).toBe(200)
+      const updated = db.prepare("SELECT model FROM tasks WHERE id = ?").get(row.id) as { model: string }
+      expect(updated.model).toBe("claude-opus-4-6")
+    })
+
+    test("returns 400 without model", async () => {
+      const row = seedTask(db)
+      const res = await app.fetch(new Request(`http://localhost/api/tasks/${row.id}/model`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),

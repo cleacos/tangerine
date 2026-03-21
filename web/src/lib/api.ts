@@ -108,6 +108,13 @@ export async function abortTask(id: string): Promise<void> {
   return request<void>(`/api/tasks/${id}/abort`, { method: "POST" })
 }
 
+export async function changeModel(id: string, model: string): Promise<void> {
+  return request<void>(`/api/tasks/${id}/model`, {
+    method: "POST",
+    body: JSON.stringify({ model }),
+  })
+}
+
 export async function fetchActivities(id: string): Promise<ActivityEntry[]> {
   return request<ActivityEntry[]>(`/api/tasks/${id}/activities`)
 }

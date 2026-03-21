@@ -269,6 +269,64 @@ export function resumeOrphanedTasks(
   })
 }
 
+/**
+ * Change the model for a running task. Kills the current agent process,
+ * updates the DB, and restarts the agent with --resume + new --model.
+ */
+export function changeModel(
+  deps: TaskManagerDeps,
+  taskId: string,
+  model: string,
+): Effect.Effect<void, TaskNotFoundError | Error> {
+  return Effect.gen(function* () {
+    const task = yield* deps.getTask(taskId).pipe(
+      Effect.mapError(() => new TaskNotFoundError({ taskId }))
+    )
+    if (!task) return yield* new TaskNotFoundError({ taskId })
+    if (task.status !== "running") {
+      return yield* Effect.fail(new Error(`Task ${taskId} is not running (status: ${task.status})`))
+    }
+
+    const projectConfig = deps.getProjectConfig(task.project_id)
+    if (!projectConfig) {
+      return yield* Effect.fail(new Error(`Unknown project: ${task.project_id}`))
+    }
+
+    log.info("Changing model", { taskId, from: task.model, to: model })
+
+    // Capture session ID before shutdown
+    const sessionId = task.agent_session_id
+
+    // Shutdown current agent (kills process, clears subscriptions)
+    const handle = deps.cleanupDeps.getAgentHandle(taskId)
+    if (handle) {
+      yield* handle.shutdown()
+    }
+
+    // Update model in DB
+    yield* deps.updateTask(taskId, { model }).pipe(Effect.ignoreLogged)
+    // Re-read task with updated model
+    const updatedTask = yield* deps.getTask(taskId).pipe(
+      Effect.flatMap((t) => t ? Effect.succeed(t) : Effect.fail(new Error("Task disappeared")))
+    )
+
+    yield* deps.logActivity(taskId, "lifecycle", "model.changed", `Model changed to ${model}`, {
+      from: task.model, to: model,
+    }).pipe(Effect.catchAll(() => Effect.void))
+
+    // Set correct agent factory
+    if (deps.getAgentFactory) {
+      deps.lifecycleDeps.agentFactory = deps.getAgentFactory(updatedTask.provider)
+    }
+
+    // Reconnect with new model + resume session
+    const taskWithSession = { ...updatedTask, agent_session_id: sessionId }
+    yield* Effect.forkDaemon(
+      reconnectSessionWithRetry(taskWithSession, projectConfig, deps.credentialConfig, deps.lifecycleDeps, deps.retryDeps)
+    )
+  })
+}
+
 export function abortAgent(
   deps: TaskManagerDeps,
   taskId: string,
