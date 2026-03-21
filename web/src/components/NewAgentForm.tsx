@@ -76,24 +76,23 @@ export function NewAgentForm({ onSubmit }: NewAgentFormProps) {
   const { current, modelsByProvider } = useProject()
   const [description, setDescription] = useState("")
   const [provider, setProvider] = useState<ProviderType>(current?.defaultProvider ?? "claude-code")
-  const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const [modelByProvider, setModelByProvider] = useState<Record<string, string>>({})
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("medium")
   const [submitting, setSubmitting] = useState(false)
   const branch = current?.defaultBranch ?? "main"
 
   const providerModels = modelsByProvider[provider] ?? []
-  const activeModel = selectedModel && providerModels.includes(selectedModel)
-    ? selectedModel
+  const activeModel = modelByProvider[provider] && providerModels.includes(modelByProvider[provider]!)
+    ? modelByProvider[provider]!
     : providerModels[0] ?? ""
 
   const handleProviderChange = useCallback((p: ProviderType) => {
     setProvider(p)
-    setSelectedModel(null)
   }, [])
 
   const handleModelChange = useCallback((m: string) => {
-    setSelectedModel(m)
-  }, [])
+    setModelByProvider((prev) => ({ ...prev, [provider]: m }))
+  }, [provider])
 
   const handleSubmit = useCallback(() => {
     const trimmed = description.trim()
