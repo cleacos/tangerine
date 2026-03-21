@@ -322,17 +322,46 @@ export function createOpenCodeProvider(deps: OpenCodeProviderDeps): AgentFactory
           updateConfig(config: import("./provider").AgentConfig) {
             return Effect.tryPromise({
               try: async () => {
-                // OpenCode supports model switching via config API
+                const configUpdate: Record<string, unknown> = {}
+
                 if (config.model) {
-                  const res = await fetch(`http://localhost:${tunnel.agentPort}/config`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ model: config.model }),
-                  })
-                  if (!res.ok) throw new Error(`Config update failed: ${res.status}`)
-                  taskLog.info("Config updated via API", { model: config.model })
+                  configUpdate.model = config.model
                 }
-                // OpenCode doesn't support reasoning effort — ignored silently
+
+                // Map reasoning effort to provider-specific options
+                if (config.reasoningEffort) {
+                  const activeModel = config.model ?? ctx.model ?? ""
+                  const providerPrefix = activeModel.split("/")[0] ?? ""
+                  const modelName = activeModel.split("/").slice(1).join("/")
+
+                  if (providerPrefix === "anthropic") {
+                    // Anthropic: thinking.budgetTokens
+                    const budgetMap: Record<string, number> = { low: 4000, medium: 16000, high: 32000 }
+                    const budget = budgetMap[config.reasoningEffort] ?? 16000
+                    configUpdate.provider = {
+                      [providerPrefix]: {
+                        models: { [modelName]: { options: { thinking: { type: "enabled", budgetTokens: budget } } } },
+                      },
+                    }
+                  } else {
+                    // OpenAI/others: reasoningEffort string
+                    configUpdate.provider = {
+                      [providerPrefix]: {
+                        models: { [modelName]: { options: { reasoningEffort: config.reasoningEffort } } },
+                      },
+                    }
+                  }
+                }
+
+                if (Object.keys(configUpdate).length === 0) return true
+
+                const res = await fetch(`http://localhost:${tunnel.agentPort}/config`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(configUpdate),
+                })
+                if (!res.ok) throw new Error(`Config update failed: ${res.status}`)
+                taskLog.info("Config updated via API", config)
                 return true
               },
               catch: (e) =>

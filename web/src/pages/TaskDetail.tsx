@@ -275,7 +275,7 @@ export function TaskDetail() {
                 onSend={session.sendPrompt}
                 onAbort={session.abort}
                 onModelChange={handleModelChange}
-                onReasoningEffortChange={task.provider === "claude-code" ? handleReasoningEffortChange : undefined}
+                onReasoningEffortChange={handleReasoningEffortChange}
               />
             </div>
           )}
@@ -342,7 +342,7 @@ export function TaskDetail() {
                 onSend={session.sendPrompt}
                 onAbort={session.abort}
                 onModelChange={handleModelChange}
-                onReasoningEffortChange={task.provider === "claude-code" ? handleReasoningEffortChange : undefined}
+                onReasoningEffortChange={handleReasoningEffortChange}
               />
             </div>
           )}
