@@ -168,6 +168,12 @@ export async function start(): Promise<void> {
             const task = db.prepare("SELECT description, title FROM tasks WHERE id = ?").get(taskId) as { description: string | null; title: string } | null
             const initialPrompt = task?.description || task?.title
             if (initialPrompt) {
+              // Emit user message via WebSocket so connected clients see it
+              emitTaskEvent(taskId, {
+                role: "user",
+                content: initialPrompt,
+                timestamp: new Date().toISOString(),
+              })
               Effect.runPromise(
                 session.agentHandle.sendPrompt(initialPrompt).pipe(Effect.catchAll(() => Effect.void))
               )
