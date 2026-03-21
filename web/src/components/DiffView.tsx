@@ -333,7 +333,7 @@ function UnifiedDiff({ diff, filePath, onAddComment }: { diff: string; filePath:
     useLineComment(filePath, getLineNum, onAddComment)
 
   return (
-    <pre className="overflow-x-auto py-2 font-mono text-[11px] leading-[1.7]">
+    <pre className="whitespace-pre-wrap break-all py-2 font-mono text-[11px] leading-[1.7]">
       {rawLines.map((line, i) => {
         if (line.startsWith("---") || line.startsWith("+++")) return null
 
