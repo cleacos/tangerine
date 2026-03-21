@@ -42,7 +42,7 @@ export function RunCard({ task, onCancel, onDelete }: RunCardProps) {
           {label}
         </span>
       </div>
-      <div className="mt-2.5 flex items-center justify-between">
+      <div className="mt-2.5 flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-fg-muted">
           <div className="flex items-center gap-1.5">
             <svg className="h-[13px] w-[13px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -65,28 +65,28 @@ export function RunCard({ task, onCancel, onDelete }: RunCardProps) {
           </div>
         </div>
         {/* Actions */}
-        {(onCancel || onDelete) && (
-          <div className="flex shrink-0 items-center">
+        {(onCancel || onDelete) && (task.status === "running" || isTerminal) && (
+          <div className="flex shrink-0 items-center gap-1 pt-1">
             {task.status === "running" && onCancel && (
               <button
                 onClick={(e) => { e.preventDefault(); onCancel(task.id) }}
-                className="rounded-md p-1.5 text-fg-muted active:bg-surface-secondary"
-                aria-label="Cancel"
+                className="flex items-center gap-1 rounded-md border border-edge px-2 py-1 text-fg-muted active:bg-surface-secondary"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
                 </svg>
+                <span className="text-[11px]">Cancel</span>
               </button>
             )}
             {isTerminal && onDelete && (
               <button
                 onClick={(e) => { e.preventDefault(); onDelete(task.id) }}
-                className="rounded-md p-1.5 text-fg-muted active:bg-surface-secondary"
-                aria-label="Delete"
+                className="flex items-center gap-1 rounded-md border border-edge px-2 py-1 text-fg-muted active:bg-surface-secondary"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                 </svg>
+                <span className="text-[11px]">Delete</span>
               </button>
             )}
           </div>
