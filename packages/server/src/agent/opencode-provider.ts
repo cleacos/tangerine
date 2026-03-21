@@ -319,20 +319,24 @@ export function createOpenCodeProvider(deps: OpenCodeProviderDeps): AgentFactory
             })
           },
 
-          changeModel(model: string) {
+          updateConfig(config: import("./provider").AgentConfig) {
             return Effect.tryPromise({
               try: async () => {
-                const res = await fetch(`http://localhost:${tunnel.agentPort}/config`, {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ model }),
-                })
-                if (!res.ok) throw new Error(`Config update failed: ${res.status}`)
-                taskLog.info("Model changed via config API", { model })
+                // OpenCode supports model switching via config API
+                if (config.model) {
+                  const res = await fetch(`http://localhost:${tunnel.agentPort}/config`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: config.model }),
+                  })
+                  if (!res.ok) throw new Error(`Config update failed: ${res.status}`)
+                  taskLog.info("Config updated via API", { model: config.model })
+                }
+                // OpenCode doesn't support reasoning effort — ignored silently
                 return true
               },
               catch: (e) =>
-                new AgentError({ message: `Model change failed: ${e}`, taskId: ctx.taskId }),
+                new AgentError({ message: `Config update failed: ${e}`, taskId: ctx.taskId }),
             })
           },
 

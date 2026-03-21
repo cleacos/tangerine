@@ -314,8 +314,8 @@ export async function start(): Promise<void> {
             Effect.mapError((e) => ({ _tag: e._tag, message: e.message }))
           )
         },
-        changeModel: (taskId, model, reasoningEffort) =>
-          taskManager.changeModel(tmDeps, taskId, model, reasoningEffort).pipe(
+        changeConfig: (taskId, config) =>
+          taskManager.changeConfig(tmDeps, taskId, config).pipe(
             Effect.mapError((e) => ({ _tag: "TaskError" as const, message: e instanceof Error ? e.message : String(e) }))
           ),
         onTaskEvent,

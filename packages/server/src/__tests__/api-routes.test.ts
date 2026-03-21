@@ -61,10 +61,10 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
         return Effect.succeed(undefined as void)
       },
       abortTask() { return Effect.succeed(undefined as void) },
-      changeModel(taskId: string, model?: string, reasoningEffort?: string) {
+      changeConfig(taskId: string, config: { model?: string; reasoningEffort?: string }) {
         return Effect.sync(() => {
-          if (model) db.prepare("UPDATE tasks SET model = ? WHERE id = ?").run(model, taskId)
-          if (reasoningEffort) db.prepare("UPDATE tasks SET reasoning_effort = ? WHERE id = ?").run(reasoningEffort, taskId)
+          if (config.model) db.prepare("UPDATE tasks SET model = ? WHERE id = ?").run(config.model, taskId)
+          if (config.reasoningEffort) db.prepare("UPDATE tasks SET reasoning_effort = ? WHERE id = ?").run(config.reasoningEffort, taskId)
         })
       },
       onTaskEvent() { return () => {} },

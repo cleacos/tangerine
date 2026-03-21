@@ -13,14 +13,24 @@ export type AgentEvent =
   | { kind: "status"; status: "idle" | "working" }
   | { kind: "error"; message: string }
 
+/** Runtime config that can be changed mid-session */
+export interface AgentConfig {
+  model?: string
+  reasoningEffort?: string
+}
+
 /** Handle to a running agent session — owns the process, tunnel, and event subscription */
 export interface AgentHandle {
   sendPrompt(text: string): Effect.Effect<void, PromptError>
   abort(): Effect.Effect<void, AgentError>
   subscribe(onEvent: (e: AgentEvent) => void): { unsubscribe(): void }
   shutdown(): Effect.Effect<void, never>
-  /** Change model without restarting. Returns false if not supported (requires restart). */
-  changeModel?(model: string): Effect.Effect<boolean, AgentError>
+  /**
+   * Apply config changes without restarting the agent process.
+   * Returns true if the change was applied successfully.
+   * If not implemented, the manager falls back to shutdown + restart.
+   */
+  updateConfig?(config: AgentConfig): Effect.Effect<boolean, AgentError>
 }
 
 /** Context passed to AgentFactory.start() to bootstrap an agent session */

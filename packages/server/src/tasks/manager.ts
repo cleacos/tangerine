@@ -273,14 +273,14 @@ export function resumeOrphanedTasks(
 }
 
 /**
- * Change the model for a running task. Kills the current agent process,
- * updates the DB, and restarts the agent with --resume + new --model.
+ * Change model/reasoning config for a running task.
+ * Tries hot-swap via handle.updateConfig() first (works for OpenCode).
+ * Falls back to shutdown + restart with --resume (needed for Claude Code).
  */
-export function changeModel(
+export function changeConfig(
   deps: TaskManagerDeps,
   taskId: string,
-  model?: string,
-  reasoningEffort?: string,
+  config: { model?: string; reasoningEffort?: string },
 ): Effect.Effect<void, TaskNotFoundError | Error> {
   return Effect.gen(function* () {
     const task = yield* deps.getTask(taskId).pipe(
@@ -296,55 +296,48 @@ export function changeModel(
       return yield* Effect.fail(new Error(`Unknown project: ${task.project_id}`))
     }
 
-    const newModel = model ?? task.model
-    const newEffort = reasoningEffort ?? task.reasoning_effort
-    const modelChanged = model && model !== task.model
-    const effortChanged = reasoningEffort && reasoningEffort !== task.reasoning_effort
-
+    const modelChanged = config.model && config.model !== task.model
+    const effortChanged = config.reasoningEffort && config.reasoningEffort !== task.reasoning_effort
     if (!modelChanged && !effortChanged) return
 
-    log.info("Changing task config", { taskId, model: modelChanged ? { from: task.model, to: model } : undefined, reasoningEffort: effortChanged ? { from: task.reasoning_effort, to: reasoningEffort } : undefined })
+    log.info("Changing task config", { taskId, model: modelChanged ? { from: task.model, to: config.model } : undefined, reasoningEffort: effortChanged ? { from: task.reasoning_effort, to: config.reasoningEffort } : undefined })
 
     const handle = deps.cleanupDeps.getAgentHandle(taskId)
 
-    // Try hot-swap via handle (OpenCode supports this — no restart needed)
-    if (modelChanged && handle?.changeModel) {
-      const hotSwapped = yield* handle.changeModel(model!).pipe(
-        Effect.catchAll(() => Effect.succeed(false))
-      )
-      if (hotSwapped) {
-        // Update DB only, no restart
-        yield* deps.updateTask(taskId, { model: model! }).pipe(Effect.ignoreLogged)
-        if (effortChanged) {
-          yield* deps.updateTask(taskId, { reasoning_effort: reasoningEffort! }).pipe(Effect.ignoreLogged)
-        }
-        const changes = [modelChanged && `model → ${model}`, effortChanged && `reasoning → ${reasoningEffort}`].filter(Boolean).join(", ")
-        yield* deps.logActivity(taskId, "lifecycle", "config.changed", changes, {
-          model: newModel, reasoningEffort: newEffort,
-        }).pipe(Effect.catchAll(() => Effect.void))
+    // Try hot-swap — provider applies changes without restart
+    if (handle?.updateConfig) {
+      const applied = yield* handle.updateConfig({
+        model: modelChanged ? config.model : undefined,
+        reasoningEffort: effortChanged ? config.reasoningEffort : undefined,
+      }).pipe(Effect.catchAll(() => Effect.succeed(false)))
+
+      if (applied) {
+        const updates: Partial<import("../db/types").TaskRow> = {}
+        if (modelChanged) updates.model = config.model!
+        if (effortChanged) updates.reasoning_effort = config.reasoningEffort!
+        yield* deps.updateTask(taskId, updates).pipe(Effect.ignoreLogged)
+
+        yield* logConfigChange(deps, taskId, config, task)
         return
       }
     }
 
-    // Fallback: restart agent (Claude Code needs this — model is a CLI flag)
+    // Fallback: restart agent process with new config
     const sessionId = task.agent_session_id
     if (handle) {
       yield* handle.shutdown()
     }
 
     const updates: Partial<import("../db/types").TaskRow> = {}
-    if (modelChanged) updates.model = model!
-    if (effortChanged) updates.reasoning_effort = reasoningEffort!
+    if (modelChanged) updates.model = config.model!
+    if (effortChanged) updates.reasoning_effort = config.reasoningEffort!
     yield* deps.updateTask(taskId, updates).pipe(Effect.ignoreLogged)
 
     const updatedTask = yield* deps.getTask(taskId).pipe(
       Effect.flatMap((t) => t ? Effect.succeed(t) : Effect.fail(new Error("Task disappeared")))
     )
 
-    const changes = [modelChanged && `model → ${model}`, effortChanged && `reasoning → ${reasoningEffort}`].filter(Boolean).join(", ")
-    yield* deps.logActivity(taskId, "lifecycle", "config.changed", changes, {
-      model: newModel, reasoningEffort: newEffort,
-    }).pipe(Effect.catchAll(() => Effect.void))
+    yield* logConfigChange(deps, taskId, config, task)
 
     const taskLifecycleDeps = depsForProvider(deps, updatedTask.provider)
     const taskWithSession = { ...updatedTask, agent_session_id: sessionId }
@@ -352,6 +345,22 @@ export function changeModel(
       reconnectSessionWithRetry(taskWithSession, projectConfig, deps.credentialConfig, taskLifecycleDeps, deps.retryDeps)
     )
   })
+}
+
+function logConfigChange(
+  deps: TaskManagerDeps,
+  taskId: string,
+  config: { model?: string; reasoningEffort?: string },
+  prev: import("../db/types").TaskRow,
+) {
+  const changes = [
+    config.model && config.model !== prev.model && `model → ${config.model}`,
+    config.reasoningEffort && config.reasoningEffort !== prev.reasoning_effort && `reasoning → ${config.reasoningEffort}`,
+  ].filter(Boolean).join(", ")
+  return deps.logActivity(taskId, "lifecycle", "config.changed", changes, {
+    model: config.model ?? prev.model,
+    reasoningEffort: config.reasoningEffort ?? prev.reasoning_effort,
+  }).pipe(Effect.catchAll(() => Effect.void))
 }
 
 export function abortAgent(

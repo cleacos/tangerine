@@ -62,7 +62,7 @@ export function sessionRoutes(deps: AppDeps): Hono {
       return c.json({ error: "model or reasoningEffort is required" }, 400)
     }
     return runEffectVoid(c,
-      deps.taskManager.changeModel(c.req.param("id"), body.model, body.reasoningEffort)
+      deps.taskManager.changeConfig(c.req.param("id"), { model: body.model, reasoningEffort: body.reasoningEffort })
     )
   })
 
