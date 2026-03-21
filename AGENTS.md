@@ -82,17 +82,23 @@ Use these skills when writing or reviewing web UI code:
 
 ## Testing
 
-- `bun test` runs all tests across workspaces
+- **All tests MUST pass before every commit** — no exceptions
+- Run web tests from `web/` dir: `cd web && bun test` (needs `bunfig.toml` preload for DOM)
+- Run server tests: `cd packages/server && bun test`
+- Run build: `bun run build` (from root)
 - **Always add tests** for new components, new lib functions, new API routes, and bug fixes
 - Architecture tests in `web/src/__tests__/architecture.test.ts` enforce structural rules — keep them passing
+- When refactoring APIs (renaming props, changing interfaces), update corresponding tests immediately
 - Test files: `web/src/__tests__/` (web), `packages/server/src/__tests__/` (API)
 
 ### Test categories
 - **Unit**: `web/src/__tests__/lib.test.ts` — pure functions in `lib/`
-- **Architecture**: `web/src/__tests__/architecture.test.ts` — no mobile files, no inline components, no JS viewport detection
+- **Architecture**: `web/src/__tests__/architecture.test.ts` — no mobile files, no inline components in pages, no JS viewport detection
 - **Hooks**: `web/src/__tests__/hooks.test.tsx` — React hook state logic
-- **Components**: `web/src/__tests__/components.test.tsx` — render + interaction tests
+- **Components**: `web/src/__tests__/components.test.tsx` — render + interaction tests (uses happy-dom via preload)
 - **API**: `packages/server/src/__tests__/api-routes.test.ts` — Hono route contracts
+- **Models**: `packages/server/src/__tests__/models.test.ts` — per-provider model discovery
+- **Skipped**: `packages/server/src/vm/__tests__/pool.test.ts` — deprecated VMPoolManager (replaced by ProjectVmManager)
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
