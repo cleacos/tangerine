@@ -182,6 +182,7 @@ export function startSession(
       `if [ -d /workspace/repo/.git ]; then
         cd /workspace/repo && git fetch origin
       else
+        rm -rf /workspace/repo
         git clone ${task.repo_url} /workspace/repo
       fi`,
     ).pipe(
