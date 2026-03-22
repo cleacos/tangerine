@@ -24,7 +24,7 @@ disk: "20GiB"
 ssh:
   localPort: 0
   loadDotSSHPubKeys: true
-  forwardAgent: false
+  forwardAgent: true
 
 # Use Lima's default user (matches host username).
 # Lima injects SSH keys and grants passwordless sudo automatically.

@@ -102,6 +102,7 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
         claudeOauthToken: null,
         anthropicApiKey: null,
         githubToken: null,
+        gheToken: null,
         ghHost: "github.com",
       },
     } satisfies AppDeps["config"],

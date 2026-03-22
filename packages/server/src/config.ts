@@ -50,6 +50,7 @@ export interface AppConfig {
     claudeOauthToken: string | null
     anthropicApiKey: string | null
     githubToken: string | null
+    gheToken: string | null
     ghHost: string
   }
 }
@@ -103,6 +104,7 @@ export function loadConfig(): AppConfig {
       claudeOauthToken,
       anthropicApiKey,
       githubToken: process.env["GITHUB_TOKEN"] ?? null,
+      gheToken: process.env["GH_ENTERPRISE_TOKEN"] ?? null,
       ghHost: process.env["GH_HOST"] ?? "github.com",
     },
   }

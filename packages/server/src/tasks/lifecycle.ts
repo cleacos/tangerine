@@ -43,6 +43,8 @@ export interface CredentialConfig {
   claudeOauthToken: string | null
   anthropicApiKey: string | null
   githubToken: string | null
+  gheToken: string | null
+  ghHost: string
 }
 
 export function startSession(
@@ -114,11 +116,17 @@ export function startSession(
       )
     }
 
-    // Claude Code auth: inject OAuth token via env var so `claude` CLI picks it up
+    // Inject env vars for LLM providers and GitHub CLI
     const envCreds: Record<string, string> = {}
     if (creds.githubToken) {
       envCreds.GITHUB_TOKEN = creds.githubToken
       envCreds.GH_TOKEN = creds.githubToken
+    }
+    if (creds.gheToken) {
+      envCreds.GH_ENTERPRISE_TOKEN = creds.gheToken
+    }
+    if (creds.ghHost !== "github.com") {
+      envCreds.GH_HOST = creds.ghHost
     }
     if (creds.anthropicApiKey) {
       envCreds.ANTHROPIC_API_KEY = creds.anthropicApiKey
@@ -130,6 +138,28 @@ export function startSession(
       yield* deps.injectCredentials(vm.ip!, vm.ssh_port!, envCreds).pipe(
         Effect.mapError((e) => new SessionStartError({
           message: `Credential injection failed: ${e.message}`,
+          taskId: task.id,
+          phase: "inject-creds",
+          cause: e,
+        }))
+      )
+    }
+
+    // Setup git credential helper for HTTPS remotes (idempotent)
+    if (creds.githubToken || creds.gheToken) {
+      const credLines: string[] = []
+      if (creds.githubToken) {
+        credLines.push(`https://x-access-token:${creds.githubToken}@github.com`)
+      }
+      if (creds.gheToken && creds.ghHost !== "github.com") {
+        credLines.push(`https://x-access-token:${creds.gheToken}@${creds.ghHost}`)
+      }
+      const credFileContent = credLines.join("\\n")
+      yield* deps.sshExec(vm.ip!, vm.ssh_port!,
+        `git config --global credential.helper store && printf '%b\\n' '${credFileContent}' > ~/.git-credentials && chmod 600 ~/.git-credentials`
+      ).pipe(
+        Effect.mapError((e) => new SessionStartError({
+          message: `Git credential setup failed: ${e.message}`,
           taskId: task.id,
           phase: "inject-creds",
           cause: e,
@@ -307,6 +337,8 @@ export function reconnectSession(
       envCreds.GITHUB_TOKEN = creds.githubToken
       envCreds.GH_TOKEN = creds.githubToken
     }
+    if (creds.gheToken) envCreds.GH_ENTERPRISE_TOKEN = creds.gheToken
+    if (creds.ghHost !== "github.com") envCreds.GH_HOST = creds.ghHost
     if (creds.anthropicApiKey) envCreds.ANTHROPIC_API_KEY = creds.anthropicApiKey
     if (creds.claudeOauthToken) envCreds.CLAUDE_CODE_OAUTH_TOKEN = creds.claudeOauthToken
     if (Object.keys(envCreds).length > 0) {
@@ -318,6 +350,21 @@ export function reconnectSession(
           cause: e,
         }))
       )
+    }
+
+    // Re-setup git credential helper (idempotent)
+    if (creds.githubToken || creds.gheToken) {
+      const credLines: string[] = []
+      if (creds.githubToken) {
+        credLines.push(`https://x-access-token:${creds.githubToken}@github.com`)
+      }
+      if (creds.gheToken && creds.ghHost !== "github.com") {
+        credLines.push(`https://x-access-token:${creds.gheToken}@${creds.ghHost}`)
+      }
+      const credFileContent = credLines.join("\\n")
+      yield* deps.sshExec(vm.ip!, vm.ssh_port!,
+        `git config --global credential.helper store && printf '%b\\n' '${credFileContent}' > ~/.git-credentials && chmod 600 ~/.git-credentials`
+      ).pipe(Effect.catchAll(() => Effect.void))
     }
 
     // 4. Kill any lingering agent process in the worktree

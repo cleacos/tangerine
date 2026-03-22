@@ -9,8 +9,9 @@ How API keys and tokens flow from host to VM. Never baked into images.
 | OpenCode `auth.json` | LLM provider auth for OpenCode (API keys or OAuth tokens) | Host's `~/.local/share/opencode/auth.json` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth authentication | Host env var |
 | `ANTHROPIC_API_KEY` | Direct Anthropic API key (both providers) | Host env var |
-| `GITHUB_TOKEN` | git push, `gh pr create` | Static PAT (v0) / User OAuth (hosted) |
-| `GH_HOST` | GitHub Enterprise | Server config |
+| `GITHUB_TOKEN` | git push, `gh pr create` on github.com | Static PAT (v0) / User OAuth (hosted) |
+| `GH_ENTERPRISE_TOKEN` | git push, `gh pr create` on GHE | Host env var |
+| `GH_HOST` | GitHub Enterprise hostname | Host env var (default: `github.com`) |
 
 ## Injection Flow
 
@@ -21,7 +22,8 @@ Credentials are injected into the VM's `~/.env` file, then sourced by the agent 
 2. SSH into VM
 3. Copy host's auth.json → VM (for OpenCode provider)
 4. Write env vars to ~/.env on VM
-5. Agent start command sources ~/.env before launching
+5. Setup git credential helper + ~/.git-credentials for HTTPS auth
+6. Agent start command sources ~/.env before launching
 ```
 
 ### auth.json Copy (OpenCode)
@@ -37,10 +39,12 @@ All providers source `~/.env` before launching. The lifecycle writes credentials
 
 ```bash
 # Written to ~/.env on the VM
-export GITHUB_TOKEN='ghp_...'
-export GH_TOKEN='ghp_...'
-export ANTHROPIC_API_KEY='sk-ant-...'
-export CLAUDE_CODE_OAUTH_TOKEN='...'
+GITHUB_TOKEN=ghp_...
+GH_TOKEN=ghp_...
+GH_ENTERPRISE_TOKEN=ghe_...    # only if GHE configured
+GH_HOST=github.corp.com        # only if not github.com
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_CODE_OAUTH_TOKEN=...
 ```
 
 The agent start commands all include: `test -f ~/.env && set -a && . ~/.env && set +a`
@@ -65,13 +69,24 @@ OpenCode stores credentials in `~/.local/share/opencode/auth.json` (mode 0600). 
 
 ## Git Authentication
 
-Inside VM:
+Two mechanisms, both configured automatically by the lifecycle:
+
+### SSH Agent Forwarding (default)
+
+Lima VMs are configured with `forwardAgent: true`. The host's SSH agent socket is forwarded into the VM, so SSH-based git remotes (`git@github.com:...`) authenticate using the host's SSH keys — including hardware tokens (YubiKey, 1Password SSH agent, macOS Keychain).
+
+### HTTPS Credential Helper
+
+For HTTPS remotes, the lifecycle configures `git credential.helper store` and writes tokens to `~/.git-credentials`:
 
 ```bash
 git config --global credential.helper store
-echo 'https://x-access-token:<GITHUB_TOKEN>@github.com' > ~/.git-credentials
-chmod 600 ~/.git-credentials
+# ~/.git-credentials (mode 0600)
+https://x-access-token:<GITHUB_TOKEN>@github.com
+https://x-access-token:<GH_ENTERPRISE_TOKEN>@<GH_HOST>   # if GHE
 ```
+
+Both mechanisms are idempotent and re-applied on reconnect.
 
 ## PR Creation
 
@@ -81,7 +96,7 @@ Agent uses `gh` CLI inside VM:
 gh pr create --base main --head tangerine/abc123 --fill
 ```
 
-`GH_TOKEN` and `GH_HOST` (if GHE) are in the environment.
+`GH_TOKEN` (github.com) and `GH_ENTERPRISE_TOKEN` + `GH_HOST` (GHE) are in the environment. The `gh` CLI auto-detects these env vars.
 
 ### Attribution
 
