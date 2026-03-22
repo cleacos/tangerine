@@ -193,6 +193,10 @@ export async function fetchBuildStatus(): Promise<BuildStatus> {
   return request<BuildStatus>("/api/images/build-status")
 }
 
+export async function retryTask(id: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/retry`, { method: "POST" })
+}
+
 export async function deleteTask(id: string): Promise<void> {
   return request<void>(`/api/tasks/${id}`, { method: "DELETE" })
 }

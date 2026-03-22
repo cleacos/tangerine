@@ -22,10 +22,11 @@ function SourceIcon({ source }: { source: string }) {
 interface RunCardProps {
   task: Task
   onCancel?: (id: string) => void
+  onRetry?: (id: string) => void
   onDelete?: (id: string) => void
 }
 
-export function RunCard({ task, onCancel, onDelete }: RunCardProps) {
+export function RunCard({ task, onCancel, onRetry, onDelete }: RunCardProps) {
   const { label, textClass, bgClass } = getStatusConfig(task.status)
   const isTerminal = ["done", "failed", "cancelled"].includes(task.status)
 
@@ -65,7 +66,7 @@ export function RunCard({ task, onCancel, onDelete }: RunCardProps) {
           </div>
         </div>
         {/* Actions */}
-        {(onCancel || onDelete) && (task.status === "running" || isTerminal) && (
+        {(onCancel || onRetry || onDelete) && (task.status === "running" || isTerminal) && (
           <div className="flex shrink-0 items-center gap-1 pt-1">
             {task.status === "running" && onCancel && (
               <button
@@ -76,6 +77,17 @@ export function RunCard({ task, onCancel, onDelete }: RunCardProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
                 </svg>
                 <span className="text-[11px]">Cancel</span>
+              </button>
+            )}
+            {onRetry && (
+              <button
+                onClick={(e) => { e.preventDefault(); onRetry(task.id) }}
+                className="flex items-center gap-1 rounded-md border border-edge px-2 py-1 text-fg-muted active:bg-surface-secondary"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+                </svg>
+                <span className="text-[11px]">Retry</span>
               </button>
             )}
             {isTerminal && onDelete && (

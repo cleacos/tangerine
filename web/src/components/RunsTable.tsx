@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import type { Task, TaskStatus } from "@tangerine/shared"
 import { getStatusConfig } from "../lib/status"
 import { formatDuration } from "../lib/format"
-import { cancelTask, deleteTask } from "../lib/api"
+import { cancelTask, deleteTask, retryTask } from "../lib/api"
 import { RunCard } from "./RunCard"
 
 type StatusFilter = "all" | "running" | "done" | "failed" | "created"
@@ -49,11 +49,16 @@ export function RunsTable({ tasks, searchQuery, onSearchChange, onRefetch }: Run
     try { await cancelTask(id); onRefetch() } catch { /* ignore */ }
   }
 
+  async function handleRetry(id: string) {
+    try { await retryTask(id); onRefetch() } catch { /* ignore */ }
+  }
+
   async function handleDelete(id: string) {
     try { await deleteTask(id); onRefetch() } catch { /* ignore */ }
   }
 
   const isTerminal = (s: string) => ["done", "failed", "cancelled"].includes(s)
+  const isRetryable = (s: string) => ["failed", "cancelled"].includes(s)
 
   return (
     <div className="flex flex-col gap-3 md:gap-4">
@@ -122,6 +127,13 @@ export function RunsTable({ tasks, searchQuery, onSearchChange, onRefetch }: Run
                     </svg>
                   </button>
                 )}
+                {isRetryable(task.status) && (
+                  <button onClick={(e) => { e.preventDefault(); handleRetry(task.id) }} className="rounded p-1.5 hover:bg-surface-secondary" title="Retry">
+                    <svg className="h-4 w-4 text-fg-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+                    </svg>
+                  </button>
+                )}
                 {isTerminal(task.status) && (
                   <button onClick={(e) => { e.preventDefault(); handleDelete(task.id) }} className="rounded p-1.5 hover:bg-surface-secondary" title="Delete">
                     <svg className="h-4 w-4 text-fg-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -145,6 +157,7 @@ export function RunsTable({ tasks, searchQuery, onSearchChange, onRefetch }: Run
               key={task.id}
               task={task}
               onCancel={task.status === "running" ? handleCancel : undefined}
+              onRetry={isRetryable(task.status) ? handleRetry : undefined}
               onDelete={isTerminal(task.status) ? handleDelete : undefined}
             />
           ))
