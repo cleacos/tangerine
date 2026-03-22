@@ -246,7 +246,13 @@ export function startSession(
       }))
     )
 
-    // 7. Start agent in worktree directory
+    // 7. Kill any stale agent processes in this worktree (from previous provisioning)
+    yield* deps.sshExec(
+      vm.ip!, vm.ssh_port!,
+      `pkill -f "claude.*${worktreePath}" 2>/dev/null; pkill -f "opencode.*${worktreePath}" 2>/dev/null; true`,
+    ).pipe(Effect.catchAll(() => Effect.void))
+
+    // 8. Start agent in worktree directory
     yield* activity("agent.starting", "Starting agent")
     const agentHandle = yield* deps.agentFactory.start({
       taskId: task.id,

@@ -84,6 +84,9 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
       reprovisionTasksForVm() {
         return Effect.succeed({ reprovisioned: 0, failed: 0 })
       },
+      resumeOrphanedTasks() {
+        return Effect.succeed(0)
+      },
       reconcile() {
         return Effect.succeed(undefined as void)
       },

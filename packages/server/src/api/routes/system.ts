@@ -40,12 +40,15 @@ export function systemRoutes(deps: AppDeps): Hono {
     )
   })
 
-  // Destroy a VM by ID and reprovision affected tasks
+  // Destroy a VM by ID, reprovision affected tasks, and restart them
   app.delete("/vms/:id", (c) => {
     const vmId = c.req.param("id")
     return runEffect(c, Effect.gen(function* () {
       yield* deps.pool.destroyVm(vmId)
       const result = yield* deps.pool.reprovisionTasksForVm(vmId)
+      if (result.reprovisioned > 0) {
+        yield* deps.pool.resumeOrphanedTasks()
+      }
       return result
     }))
   })

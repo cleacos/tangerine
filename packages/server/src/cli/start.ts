@@ -358,6 +358,13 @@ export async function start(): Promise<void> {
             })),
           )
         },
+        resumeOrphanedTasks: () =>
+          taskManager.resumeOrphanedTasks(tmDeps).pipe(
+            Effect.mapError((e): { _tag: string; message?: string } => ({
+              _tag: "TaskError",
+              message: e.message,
+            })),
+          ),
         reconcile: () => Effect.void,
       },
       imageBuild: {

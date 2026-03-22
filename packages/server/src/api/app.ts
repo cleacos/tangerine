@@ -42,6 +42,7 @@ export interface AppDeps {
     getPoolStats(): Effect.Effect<unknown, TaggedError>
     destroyVm(vmId: string): Effect.Effect<void, TaggedError>
     reprovisionTasksForVm(vmId: string): Effect.Effect<{ reprovisioned: number; failed: number }, TaggedError>
+    resumeOrphanedTasks(): Effect.Effect<number, TaggedError>
     reconcile(): Effect.Effect<void, TaggedError>
   }
   imageBuild: {
