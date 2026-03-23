@@ -1,7 +1,7 @@
 export type TaskStatus = "created" | "provisioning" | "running" | "done" | "failed" | "cancelled"
 export type VmStatus = "provisioning" | "active" | "stopped" | "destroyed" | "error"
 export type ProviderType = "opencode" | "claude-code"
-export type TaskSource = "github" | "linear" | "manual"
+export type TaskSource = "github" | "linear" | "manual" | "cross-project"
 
 export interface Task {
   id: string

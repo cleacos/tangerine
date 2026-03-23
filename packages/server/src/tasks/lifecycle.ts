@@ -19,6 +19,7 @@ export interface SessionInfo {
   branch: string
   worktreePath: string
   proxyTunnel: ProxyTunnel | null
+  apiTunnel: ProxyTunnel | null
 }
 
 export interface LifecycleDeps {
@@ -51,6 +52,8 @@ export interface CredentialConfig {
   /** Local SOCKS proxy port for GHE access (e.g. 8080). When set, a reverse SSH tunnel
    *  forwards this port into the VM so git/gh can reach the enterprise host. */
   proxyPort: number | null
+  /** Tangerine server port — reverse-tunneled into VM for cross-project task creation */
+  serverPort: number
 }
 
 export function startSession(
@@ -228,6 +231,35 @@ export function startSession(
       yield* activity("proxy.ready", "Proxy tunnel established")
     }
 
+    // 3c. Reverse tunnel for Tangerine API (cross-project task creation)
+    yield* activity("api-tunnel.starting", `Starting API reverse tunnel on port ${creds.serverPort}`)
+    const apiTunnel = yield* deps.createProxyTunnel({
+      vmIp: vm.ip!,
+      sshPort: vm.ssh_port!,
+      localPort: creds.serverPort,
+    }).pipe(
+      Effect.mapError((e) => new SessionStartError({
+        message: `API tunnel failed: ${e.message}`,
+        taskId: task.id,
+        phase: "api-tunnel",
+        cause: e,
+      }))
+    )
+
+    // Inject task ID and server port so tangerine-task CLI can reach the host
+    yield* deps.injectCredentials(vm.ip!, vm.ssh_port!, {
+      TANGERINE_TASK_ID: task.id,
+      TANGERINE_SERVER_PORT: String(creds.serverPort),
+    }).pipe(
+      Effect.mapError((e) => new SessionStartError({
+        message: `API env injection failed: ${e.message}`,
+        taskId: task.id,
+        phase: "api-tunnel",
+        cause: e,
+      }))
+    )
+    yield* activity("api-tunnel.ready", "API reverse tunnel established")
+
     // 4. Clone or fetch the repository
     yield* deps.sshExec(vm.ip!, vm.ssh_port!, "mkdir -p /workspace/worktrees").pipe(
       Effect.catchAll(() => Effect.void),
@@ -360,6 +392,7 @@ export function startSession(
       branch,
       worktreePath,
       proxyTunnel,
+      apiTunnel,
     }
   })
 }
@@ -479,6 +512,25 @@ export function reconnectSession(
       yield* activity("proxy.ready", "Proxy tunnel re-established")
     }
 
+    // 3c. Re-establish API reverse tunnel for cross-project task creation
+    const apiTunnel = yield* deps.createProxyTunnel({
+      vmIp: vm.ip!,
+      sshPort: vm.ssh_port!,
+      localPort: creds.serverPort,
+    }).pipe(
+      Effect.mapError((e) => new SessionStartError({
+        message: `API tunnel failed: ${e.message}`,
+        taskId: task.id,
+        phase: "api-tunnel",
+        cause: e,
+      }))
+    )
+
+    yield* deps.injectCredentials(vm.ip!, vm.ssh_port!, {
+      TANGERINE_TASK_ID: task.id,
+      TANGERINE_SERVER_PORT: String(creds.serverPort),
+    }).pipe(Effect.catchAll(() => Effect.void))
+
     // 4. Kill any lingering agent process in the worktree
     yield* deps.sshExec(vm.ip!, vm.ssh_port!,
       `pkill -f "claude.*${worktreePath}" 2>/dev/null; pkill -f "opencode.*${worktreePath}" 2>/dev/null; true`
@@ -530,6 +582,7 @@ export function reconnectSession(
       branch,
       worktreePath,
       proxyTunnel,
+      apiTunnel,
     }
   })
 }

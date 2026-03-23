@@ -18,6 +18,7 @@ export interface CleanupDeps {
   getVmForTask(taskId: string): Effect.Effect<{ ip: string; sshPort: number; status: string } | null, Error>
   getAgentHandle(taskId: string): import("../agent/provider").AgentHandle | null
   getProxyTunnel(taskId: string): ProxyTunnel | null
+  getApiTunnel(taskId: string): ProxyTunnel | null
 }
 
 export function cleanupSession(
@@ -69,6 +70,15 @@ export function cleanupSession(
         try { proxyTunnel.process.kill() } catch { /* already dead */ }
       }))
       taskLog.debug("Proxy tunnel killed")
+    }
+
+    // 2c. Kill API reverse tunnel (cross-project task creation)
+    const apiTunnel = deps.getApiTunnel(taskId)
+    if (apiTunnel) {
+      Effect.runSync(Effect.sync(() => {
+        try { apiTunnel.process.kill() } catch { /* already dead */ }
+      }))
+      taskLog.debug("API tunnel killed")
     }
 
     // 3. Remove worktree from VM (best-effort)

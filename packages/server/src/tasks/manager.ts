@@ -26,7 +26,7 @@ function depsForProvider(deps: TaskManagerDeps, provider: string): LifecycleDeps
   return { ...deps.lifecycleDeps, agentFactory: deps.getAgentFactory(provider) }
 }
 
-export type TaskSource = "github" | "manual" | "api"
+export type TaskSource = "github" | "manual" | "api" | "cross-project"
 
 export interface TaskManagerDeps {
   insertTask(task: Pick<TaskRow, "id" | "project_id" | "source" | "repo_url" | "title"> & Partial<Pick<TaskRow, "source_id" | "source_url" | "description" | "user_id" | "branch" | "provider" | "model" | "reasoning_effort">>): Effect.Effect<TaskRow, Error>

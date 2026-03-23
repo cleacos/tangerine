@@ -51,6 +51,8 @@ function classifyTool(toolName: string): { activityType: "file" | "system"; acti
 const agentHandles = new Map<string, AgentHandle>()
 // In-memory map of taskId → active proxy tunnel (for cleanup)
 const proxyTunnels = new Map<string, ProxyTunnel>()
+// In-memory map of taskId → active API reverse tunnel (for cleanup)
+const apiTunnels = new Map<string, ProxyTunnel>()
 
 export async function start(): Promise<void> {
   const startSpan = log.startOp("server-start")
@@ -130,6 +132,7 @@ export async function start(): Promise<void> {
         }),
       getAgentHandle: (taskId) => agentHandles.get(taskId) ?? null,
       getProxyTunnel: (taskId) => proxyTunnels.get(taskId) ?? null,
+      getApiTunnel: (taskId) => apiTunnels.get(taskId) ?? null,
     }
 
     const tmDeps: TaskManagerDeps = {
@@ -190,6 +193,10 @@ export async function start(): Promise<void> {
           // Store proxy tunnel for cleanup
           if (session.proxyTunnel) {
             proxyTunnels.set(taskId, session.proxyTunnel)
+          }
+          // Store API reverse tunnel for cleanup
+          if (session.apiTunnel) {
+            apiTunnels.set(taskId, session.apiTunnel)
           }
 
           // Send initial prompt immediately for new tasks (no existing logs).

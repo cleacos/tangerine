@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "fs"
 import { join } from "path"
 import { homedir, userInfo } from "os"
-import { tangerineConfigSchema } from "@tangerine/shared"
+import { tangerineConfigSchema, DEFAULT_API_PORT } from "@tangerine/shared"
 import type { TangerineConfig, ProjectConfig } from "@tangerine/shared"
 
 export const TANGERINE_HOME = join(homedir(), "tangerine")
@@ -54,6 +54,7 @@ export interface AppConfig {
     gheToken: string | null
     ghHost: string
     proxyPort: number | null
+    serverPort: number
   }
 }
 
@@ -171,6 +172,7 @@ export function loadConfig(): AppConfig {
       gheToken: process.env["GH_ENTERPRISE_TOKEN"] ?? dotfile.GH_ENTERPRISE_TOKEN ?? null,
       ghHost: process.env["GH_HOST"] ?? dotfile.GH_HOST ?? "github.com",
       proxyPort: proxyPort && !isNaN(proxyPort) ? proxyPort : null,
+      serverPort: parseInt(process.env["PORT"] ?? "", 10) || DEFAULT_API_PORT,
     },
   }
 }

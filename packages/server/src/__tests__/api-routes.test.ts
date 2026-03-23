@@ -117,6 +117,7 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
         gheToken: null,
         ghHost: "github.com",
         proxyPort: null,
+        serverPort: 3456,
       },
     } satisfies AppDeps["config"],
     imageBuild: {
@@ -266,6 +267,41 @@ describe("API routes", () => {
         body: JSON.stringify({ projectId: "nonexistent", title: "Task" }),
       }))
       expect(res.status).toBe(400)
+    })
+  })
+
+  describe("POST /api/tasks (cross-project)", () => {
+    test("creates a cross-project task with source and sourceId", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "test-project",
+          title: "Fix bug found in other project",
+          description: "Details here",
+          source: "cross-project",
+          sourceId: "origin-task-123",
+        }),
+      }))
+      expect(res.status).toBe(201)
+      const body = await res.json() as { title: string; source: string; sourceId: string }
+      expect(body.title).toBe("Fix bug found in other project")
+      expect(body.source).toBe("cross-project")
+      expect(body.sourceId).toBe("origin-task-123")
+    })
+
+    test("defaults to manual source when source not specified", async () => {
+      const res = await app.fetch(new Request("http://localhost/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "test-project",
+          title: "Regular task",
+        }),
+      }))
+      expect(res.status).toBe(201)
+      const body = await res.json() as { source: string }
+      expect(body.source).toBe("manual")
     })
   })
 
