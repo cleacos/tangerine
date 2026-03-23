@@ -33,7 +33,7 @@ export function sshExec(
       const exitCode = await proc.exited
 
       if (exitCode !== 0) {
-        log.error("SSH command failed", {
+        log.debug("SSH command failed", {
           host,
           command: truncate(command),
           exitCode,
@@ -113,7 +113,7 @@ export function sshExecStreaming(
 
       const exitCode = await proc.exited
       if (exitCode !== 0) {
-        log.error("SSH streaming command failed", {
+        log.debug("SSH streaming command failed", {
           host,
           command: truncate(command),
           exitCode,

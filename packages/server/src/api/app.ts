@@ -35,6 +35,7 @@ export interface AppDeps {
     sendPrompt(taskId: string, text: string): Effect.Effect<void, TaggedError>
     abortTask(taskId: string): Effect.Effect<void, TaggedError>
     changeConfig(taskId: string, config: { model?: string; reasoningEffort?: string }): Effect.Effect<void, TaggedError>
+    cleanupTask(taskId: string): Effect.Effect<void, TaggedError>
     onTaskEvent(taskId: string, handler: (data: unknown) => void): () => void
     onStatusChange(taskId: string, handler: (status: string) => void): () => void
   }
@@ -55,10 +56,15 @@ export interface AppDeps {
     stop(taskId: string): Effect.Effect<void, TaggedError>
     status(taskId: string): Effect.Effect<{ running: boolean }, TaggedError>
   }
+  orphanCleanup: {
+    findOrphans(): Effect.Effect<Array<{ id: string; title: string; status: string; worktreePath: string }>, TaggedError>
+    cleanupOrphans(): Effect.Effect<number, TaggedError>
+  }
   configStore: {
     read(): import("../config").RawConfig
     write(config: import("../config").RawConfig): void
   }
+  refreshCredentials(): Effect.Effect<{ updated: number; failed: number }, TaggedError>
   config: AppConfig
 }
 

@@ -19,3 +19,6 @@ export type { RetryDeps } from "./retry"
 
 export { checkTask, checkAllTasks, startHealthMonitor } from "./health"
 export type { HealthCheckDeps } from "./health"
+
+export { findOrphans, cleanupOrphans, startOrphanCleanup } from "./orphan-cleanup"
+export type { OrphanCleanupDeps } from "./orphan-cleanup"

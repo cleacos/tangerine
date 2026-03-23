@@ -64,8 +64,10 @@ export function taskRoutes(deps: AppDeps): Hono {
           if (!task) return Effect.fail(new TaskNotFoundError({ taskId }))
           if (task.status !== "failed" && task.status !== "cancelled") return Effect.fail(new Error("Only failed or cancelled tasks can be retried"))
 
-          // Mark old task as cancelled and create a fresh one with same params
-          return updateTask(deps.db, taskId, { status: "cancelled" }).pipe(
+          // Clean up old task's worktree, mark as cancelled, create fresh one
+          return deps.taskManager.cleanupTask(taskId).pipe(
+            Effect.catchAll(() => Effect.void),
+            Effect.flatMap(() => updateTask(deps.db, taskId, { status: "cancelled" })),
             Effect.flatMap(() =>
               deps.taskManager.createTask({
                 source: task.source as "manual" | "github" | "api",
@@ -103,6 +105,7 @@ export function taskRoutes(deps: AppDeps): Hono {
         if (!terminal.has(task.status)) {
           return yield* Effect.fail(new TaskNotTerminalError({ taskId, status: task.status }))
         }
+        yield* deps.taskManager.cleanupTask(taskId).pipe(Effect.catchAll(() => Effect.void))
         yield* deleteTask(deps.db, taskId)
       })
     )

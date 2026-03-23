@@ -13,7 +13,8 @@ export interface CleanupDeps {
   persistMessages(taskId: string, messages: unknown[]): Effect.Effect<void, Error>
   sshExec(host: string, port: number, command: string): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }, import("../errors").SshError>
   getTask(taskId: string): Effect.Effect<TaskRow | null, Error>
-  getVmForTask(taskId: string): Effect.Effect<{ ip: string; sshPort: number } | null, Error>
+  updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<unknown, Error>
+  getVmForTask(taskId: string): Effect.Effect<{ ip: string; sshPort: number; status: string } | null, Error>
   getAgentHandle(taskId: string): import("../agent/provider").AgentHandle | null
 }
 
@@ -65,7 +66,7 @@ export function cleanupSession(
         Effect.catchAll(() => Effect.succeed(null)),
       )
 
-      if (vmInfo) {
+      if (vmInfo && vmInfo.status !== "destroyed") {
         yield* deps.sshExec(
           vmInfo.ip,
           vmInfo.sshPort,
@@ -74,7 +75,14 @@ export function cleanupSession(
           Effect.tap(() => Effect.sync(() => taskLog.info("Worktree removed", { path: task.worktree_path }))),
           Effect.ignoreLogged,
         )
+      } else {
+        taskLog.debug("Skipping worktree removal — VM unavailable", { path: task.worktree_path })
       }
+    }
+
+    // 4. Clear worktree_path so task isn't flagged as orphaned
+    if (task.worktree_path) {
+      yield* deps.updateTask(task.id, { worktree_path: null }).pipe(Effect.ignoreLogged)
     }
 
     // NOTE: VM is NOT released/destroyed — it persists for the project

@@ -5,6 +5,8 @@ import { Effect, Schedule } from "effect"
 import { createLogger } from "../logger"
 import { HealthCheckError } from "../errors"
 import type { TaskRow } from "../db/types"
+import type { CleanupDeps } from "./cleanup"
+import { cleanupSession } from "./cleanup"
 
 const log = createLogger("health")
 
@@ -16,6 +18,7 @@ export interface HealthCheckDeps {
   checkVmHealth(vmId: string): Effect.Effect<boolean, never>
   restartOpencode(task: TaskRow): Effect.Effect<void, import("../errors").SshError>
   failTask(taskId: string, reason: string): Effect.Effect<void, Error>
+  cleanupDeps: CleanupDeps
 }
 
 export function checkTask(
@@ -34,6 +37,7 @@ export function checkTask(
           reason: "VM is unreachable, cannot recover",
         })
         yield* deps.failTask(task.id, "VM became unreachable").pipe(Effect.ignoreLogged)
+        yield* cleanupSession(task.id, deps.cleanupDeps).pipe(Effect.ignoreLogged)
         return yield* new HealthCheckError({
           message: "VM became unreachable",
           taskId: task.id,
@@ -58,6 +62,7 @@ export function checkTask(
               yield* deps.failTask(task.id, "OpenCode server unresponsive and restart failed").pipe(
                 Effect.ignoreLogged
               )
+              yield* cleanupSession(task.id, deps.cleanupDeps).pipe(Effect.ignoreLogged)
               return "failed" as const
             })
           })

@@ -67,6 +67,7 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
           if (config.reasoningEffort) db.prepare("UPDATE tasks SET reasoning_effort = ? WHERE id = ?").run(config.reasoningEffort, taskId)
         })
       },
+      cleanupTask() { return Effect.void },
       onTaskEvent() { return () => {} },
       onStatusChange() { return () => {} },
     },
@@ -92,6 +93,10 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
       },
     },
     sshExec() { return Effect.succeed("") },
+    orphanCleanup: {
+      findOrphans() { return Effect.succeed([]) },
+      cleanupOrphans() { return Effect.succeed(0) },
+    },
     devServer: {
       start() { return Effect.succeed(undefined as void) },
       stop() { return Effect.succeed(undefined as void) },
@@ -101,6 +106,7 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
       read: () => rawConfig,
       write: (config: RawConfig) => { rawConfig = config },
     },
+    refreshCredentials: () => Effect.succeed({ updated: 0, failed: 0 }),
     config: {
       config: configData,
       credentials: {

@@ -6,7 +6,9 @@ import { createLogger } from "../logger"
 
 import type { TaskRow } from "../db/types"
 import type { CredentialConfig, LifecycleDeps, ProjectConfig, SessionInfo } from "./lifecycle"
+import type { CleanupDeps } from "./cleanup"
 import { startSession, reconnectSession } from "./lifecycle"
+import { cleanupSession } from "./cleanup"
 
 const log = createLogger("retry")
 
@@ -15,6 +17,7 @@ const MAX_RETRY_ATTEMPTS = 3
 export interface RetryDeps {
   updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, Error>
   onSessionReady?(taskId: string, session: SessionInfo): void
+  cleanupDeps: CleanupDeps
 }
 
 export function startSessionWithRetry(
@@ -47,12 +50,13 @@ export function startSessionWithRetry(
       })
     ),
     Effect.catchAll((error) =>
-      // After all retries exhausted, mark task as failed
+      // After all retries exhausted, mark task as failed and clean up worktree
       Effect.gen(function* () {
         yield* retryDeps.updateTask(task.id, { status: "failed" }).pipe(Effect.ignoreLogged)
         yield* retryDeps.updateTask(task.id, {
           error: `Failed after ${MAX_RETRY_ATTEMPTS} attempts: ${error.message}`,
         }).pipe(Effect.ignoreLogged)
+        yield* cleanupSession(task.id, retryDeps.cleanupDeps).pipe(Effect.ignoreLogged)
       })
     )
   )
@@ -93,6 +97,7 @@ export function reconnectSessionWithRetry(
         yield* retryDeps.updateTask(task.id, {
           error: `Reconnect failed after ${MAX_RETRY_ATTEMPTS} attempts: ${error.message}`,
         }).pipe(Effect.ignoreLogged)
+        yield* cleanupSession(task.id, retryDeps.cleanupDeps).pipe(Effect.ignoreLogged)
       })
     )
   )
