@@ -7,6 +7,7 @@ import { createLogger } from "../logger"
 import type { TaskRow } from "../db/types"
 import type { CleanupDeps } from "./cleanup"
 import { cleanupSession } from "./cleanup"
+import { reconcileStaleSlots } from "./worktree-pool"
 
 const log = createLogger("orphan-cleanup")
 
@@ -37,6 +38,20 @@ export function cleanupOrphans(
   deps: OrphanCleanupDeps,
 ): Effect.Effect<number, never> {
   return Effect.gen(function* () {
+    // Reconcile stale worktree pool slots before checking orphans
+    const allVmIds = yield* Effect.try(() => {
+      const rows = deps.cleanupDeps.db.prepare(
+        "SELECT DISTINCT vm_id FROM worktree_slots WHERE status = 'bound'",
+      ).all() as { vm_id: string }[]
+      return rows.map((r) => r.vm_id)
+    }).pipe(Effect.catchAll(() => Effect.succeed([] as string[])))
+
+    for (const vmId of allVmIds) {
+      yield* reconcileStaleSlots(deps.cleanupDeps.db, vmId, deps.cleanupDeps.getTask).pipe(
+        Effect.ignoreLogged,
+      )
+    }
+
     const orphans = yield* findOrphans(deps).pipe(
       Effect.catchAll(() => Effect.succeed([] as TaskRow[]))
     )

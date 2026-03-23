@@ -92,6 +92,7 @@ export async function start(): Promise<void> {
 
     // Wire task manager — extract cleanupDeps so retryDeps can reference it
     const cleanupDeps: CleanupDeps = {
+      db,
       getSessionMessages: (agentPort, sessionId) =>
         Effect.tryPromise({
           try: async () => {
@@ -148,6 +149,7 @@ export async function start(): Promise<void> {
       },
       credentialConfig: config.credentials,
       lifecycleDeps: {
+        db,
         getOrCreateVm: (projectId, imageName) => vmManager.getOrCreateVm(projectId, imageName),
         sshExec: (host, port, command) =>
           sshExec(host, port, command).pipe(
@@ -180,6 +182,7 @@ export async function start(): Promise<void> {
         // Agent factory is set dynamically per task in retryDeps.onSessionReady
         // Default to opencode — overridden by the retry wrapper
         agentFactory: openCodeFactory,
+        getTask: (taskId) => getTask(db, taskId),
         updateTask: (taskId, updates) => updateTask(db, taskId, updates).pipe(Effect.asVoid),
         logActivity: (taskId, type, event, content, metadata) => logActivity(db, taskId, type, event, content, metadata),
       },

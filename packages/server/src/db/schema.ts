@@ -95,4 +95,17 @@ export const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_system_logs_logger ON system_logs(logger);
   CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp);
   CREATE INDEX IF NOT EXISTS idx_system_logs_task_id ON system_logs(task_id);
+
+  CREATE TABLE IF NOT EXISTS worktree_slots (
+    id TEXT PRIMARY KEY,
+    vm_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'available',
+    task_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (vm_id) REFERENCES vms(id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_worktree_slots_vm_status ON worktree_slots(vm_id, status);
 `

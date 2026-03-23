@@ -2,12 +2,14 @@
 // Each step is logged so failures are diagnosable from taskId alone.
 
 import { Effect } from "effect"
+import type { Database } from "bun:sqlite"
 import { createLogger } from "../logger"
 import { SessionStartError } from "../errors"
 import type { TaskRow } from "../db/types"
 import type { ProjectVmRow } from "../vm/project-vm"
 import type { ProxyTunnel } from "../vm/tunnel"
 import { getHandleMeta } from "../agent/opencode-provider"
+import { initPool, acquireSlot } from "./worktree-pool"
 
 const log = createLogger("lifecycle")
 
@@ -23,6 +25,7 @@ export interface SessionInfo {
 }
 
 export interface LifecycleDeps {
+  db: Database
   getOrCreateVm(projectId: string, imageName: string): Effect.Effect<ProjectVmRow, Error>
   sshExec(host: string, port: number, command: string): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }, import("../errors").SshError>
   waitForSsh(host: string, port: number): Effect.Effect<void, import("../errors").SshTimeoutError>
@@ -30,6 +33,7 @@ export interface LifecycleDeps {
   injectCredentials(host: string, port: number, credentials: Record<string, string>): Effect.Effect<void, import("../errors").SshError>
   createProxyTunnel(opts: { vmIp: string; sshPort: number; localPort: number }): Effect.Effect<ProxyTunnel, import("../errors").TunnelError>
   agentFactory: import("../agent/provider").AgentFactory
+  getTask(taskId: string): Effect.Effect<{ status: string } | null, Error>
   updateTask(taskId: string, updates: Partial<TaskRow>): Effect.Effect<void, Error>
   logActivity(taskId: string, type: "lifecycle" | "system", event: string, content: string, metadata?: Record<string, unknown>): Effect.Effect<unknown, Error>
 }
@@ -40,6 +44,7 @@ export interface ProjectConfig {
   image: string
   setup: string
   preview: { port: number }
+  poolSize?: number
 }
 
 export interface CredentialConfig {
@@ -69,7 +74,6 @@ export function startSession(
     const taskLog = log.child({ taskId: task.id })
     const sessionSpan = taskLog.startOp("session-start")
     const taskPrefix = task.id.slice(0, 8)
-    const worktreePath = `/workspace/worktrees/${taskPrefix}`
     // Reuse existing branch name if task was reprovisioned
     const branch = task.branch ?? `tangerine/${taskPrefix}`
 
@@ -261,10 +265,6 @@ export function startSession(
     yield* activity("api-tunnel.ready", "API reverse tunnel established")
 
     // 4. Clone or fetch the repository
-    yield* deps.sshExec(vm.ip!, vm.ssh_port!, "mkdir -p /workspace/worktrees").pipe(
-      Effect.catchAll(() => Effect.void),
-    )
-
     const defaultBranch = config.defaultBranch ?? "main"
     const cloneSpan = vmLog.startOp("clone-repo", { repo: task.repo_url })
     yield* activity("repo.cloning", `Setting up ${task.repo_url}`)
@@ -290,28 +290,46 @@ export function startSession(
       }))
     )
 
-    // 5. Create worktree for this task
-    // If task has a branch that exists on remote (reprovisioned task), use it.
-    // Otherwise create a new branch from the default branch.
-    yield* activity("worktree.creating", `Creating worktree at ${worktreePath}`)
-    yield* deps.sshExec(
-      vm.ip!,
-      vm.ssh_port!,
-      `cd /workspace/repo && if git rev-parse --verify origin/${branch} >/dev/null 2>&1; then
-        git worktree add ${worktreePath} origin/${branch} && cd ${worktreePath} && git checkout -B ${branch}
-      else
-        git worktree add ${worktreePath} -b ${branch} origin/${defaultBranch}
-      fi`,
-    ).pipe(
-      Effect.tap(() => activity("worktree.created", "Worktree ready", { worktreePath, branch })),
+    // 5. Init worktree pool (idempotent) and acquire a slot
+    yield* initPool(deps.db, vm.id, deps.sshExec, vm.ip!, vm.ssh_port!, config.poolSize).pipe(
       Effect.mapError((e) => new SessionStartError({
-        message: `Worktree creation failed: ${e.message}`,
+        message: `Pool init failed: ${e.message}`,
         taskId: task.id,
-        phase: "create-worktree",
+        phase: "pool-init",
         cause: e,
       }))
     )
-    vmLog.debug("Worktree created", { worktreePath, branch })
+
+    yield* activity("worktree.acquiring", "Acquiring worktree slot")
+    const slot = yield* acquireSlot(deps.db, vm.id, task.id, deps.getTask).pipe(
+      Effect.mapError((e) => new SessionStartError({
+        message: `Slot acquisition failed: ${e.message}`,
+        taskId: task.id,
+        phase: "acquire-slot",
+        cause: e,
+      }))
+    )
+    const worktreePath = slot.path
+
+    // Checkout the task branch on the acquired slot
+    yield* deps.sshExec(
+      vm.ip!,
+      vm.ssh_port!,
+      `cd ${worktreePath} && if git rev-parse --verify origin/${branch} >/dev/null 2>&1; then
+        git fetch origin && git checkout -B ${branch} origin/${branch}
+      else
+        git fetch origin && git checkout -B ${branch} origin/${defaultBranch}
+      fi`,
+    ).pipe(
+      Effect.tap(() => activity("worktree.ready", "Worktree ready", { worktreePath, branch, slot: slot.id })),
+      Effect.mapError((e) => new SessionStartError({
+        message: `Branch checkout failed: ${e.message}`,
+        taskId: task.id,
+        phase: "checkout-branch",
+        cause: e,
+      }))
+    )
+    vmLog.debug("Worktree slot acquired", { worktreePath, branch, slotId: slot.id })
 
     yield* deps.updateTask(task.id, { branch, worktree_path: worktreePath }).pipe(
       Effect.mapError((e) => new SessionStartError({

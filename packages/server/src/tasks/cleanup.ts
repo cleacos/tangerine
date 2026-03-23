@@ -2,14 +2,17 @@
 // VM persists for the project — only the worktree is cleaned up.
 
 import { Effect } from "effect"
+import type { Database } from "bun:sqlite"
 import { createLogger } from "../logger"
 import { SessionCleanupError } from "../errors"
 import type { TaskRow } from "../db/types"
 import type { ProxyTunnel } from "../vm/tunnel"
+import { releaseSlot } from "./worktree-pool"
 
 const log = createLogger("cleanup")
 
 export interface CleanupDeps {
+  db: Database
   getSessionMessages(agentPort: number, sessionId: string): Effect.Effect<unknown[], import("../errors").AgentError>
   persistMessages(taskId: string, messages: unknown[]): Effect.Effect<void, Error>
   sshExec(host: string, port: number, command: string): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }, import("../errors").SshError>
@@ -81,23 +84,19 @@ export function cleanupSession(
       taskLog.debug("API tunnel killed")
     }
 
-    // 3. Remove worktree from VM (best-effort)
+    // 3. Release worktree slot back to pool (resets to detached HEAD, best-effort)
     if (task.worktree_path && task.vm_id) {
       const vmInfo = yield* deps.getVmForTask(taskId).pipe(
         Effect.catchAll(() => Effect.succeed(null)),
       )
 
       if (vmInfo && vmInfo.status !== "destroyed") {
-        yield* deps.sshExec(
-          vmInfo.ip,
-          vmInfo.sshPort,
-          `cd /workspace/repo && git worktree remove ${task.worktree_path} --force 2>/dev/null || rm -rf ${task.worktree_path}`,
-        ).pipe(
-          Effect.tap(() => Effect.sync(() => taskLog.info("Worktree removed", { path: task.worktree_path }))),
+        yield* releaseSlot(deps.db, task.id, deps.sshExec, vmInfo.ip, vmInfo.sshPort).pipe(
+          Effect.tap(() => Effect.sync(() => taskLog.info("Worktree slot released", { path: task.worktree_path }))),
           Effect.ignoreLogged,
         )
       } else {
-        taskLog.debug("Skipping worktree removal — VM unavailable", { path: task.worktree_path })
+        taskLog.debug("Skipping slot release — VM unavailable", { path: task.worktree_path })
       }
     }
 

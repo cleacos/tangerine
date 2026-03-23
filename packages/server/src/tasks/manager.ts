@@ -16,6 +16,7 @@ import type { RetryDeps } from "./retry"
 import { cleanupSession } from "./cleanup"
 import { startSessionWithRetry, reconnectSessionWithRetry } from "./retry"
 import { emitStatusChange } from "./events"
+import { deletePoolForVm, reconcileStaleSlots } from "./worktree-pool"
 
 const log = createLogger("tasks")
 
@@ -240,6 +241,12 @@ export function resumeOrphanedTasks(
     const total = needsFullRestart.length + needsReconnect.length
     if (total === 0) return 0
 
+    // Reconcile stale worktree slots before resuming — frees slots bound to terminal tasks
+    const allVmIds = new Set([...needsFullRestart, ...needsReconnect].map((t) => t.vm_id).filter(Boolean) as string[])
+    for (const vmId of allVmIds) {
+      yield* reconcileStaleSlots(deps.lifecycleDeps.db, vmId, deps.getTask).pipe(Effect.ignoreLogged)
+    }
+
     for (const task of needsFullRestart) {
       const projectConfig = deps.getProjectConfig(task.project_id)
       if (!projectConfig) {
@@ -418,6 +425,9 @@ export function reprovisionTasksForVm(
     )
 
     if (affected.length === 0) return { reprovisioned: 0, failed: 0 }
+
+    // Delete pool slots for the old VM — new VM will reinit on first task
+    yield* deletePoolForVm(deps.lifecycleDeps.db, vmId).pipe(Effect.ignoreLogged)
 
     let reprovisioned = 0
     let failed = 0

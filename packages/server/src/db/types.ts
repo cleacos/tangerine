@@ -50,6 +50,17 @@ export interface SessionLogRow {
   timestamp: string
 }
 
+export type WorktreeSlotStatus = "available" | "bound" | "initializing"
+
+export interface WorktreeSlotRow {
+  id: string
+  vm_id: string
+  path: string
+  status: WorktreeSlotStatus
+  task_id: string | null
+  created_at: string
+}
+
 export interface ImageRow {
   id: string
   name: string
