@@ -99,13 +99,15 @@ export async function install(): Promise<void> {
   console.log("\nCredentials:")
   const hasOpencode = existsSync(OPENCODE_AUTH_PATH)
   const hasApiKey = !!process.env["ANTHROPIC_API_KEY"]
+  const hasClaude = !!process.env["CLAUDE_CODE_OAUTH_TOKEN"]
   check(
     "LLM credentials",
-    hasOpencode || hasApiKey,
-    "Run `opencode auth login` or set ANTHROPIC_API_KEY",
+    hasOpencode || hasApiKey || hasClaude,
+    "Run `tangerine config set ANTHROPIC_API_KEY=...` or `opencode auth login`",
   )
   if (hasOpencode) console.log("    (using opencode auth.json)")
   if (hasApiKey) console.log("    (using ANTHROPIC_API_KEY)")
+  if (hasClaude) console.log("    (using CLAUDE_CODE_OAUTH_TOKEN)")
 
   const hasGithub = !!process.env["GITHUB_TOKEN"]
   check("GITHUB_TOKEN", hasGithub, "Set GITHUB_TOKEN for PR creation and repo access")

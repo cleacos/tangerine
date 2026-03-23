@@ -35,6 +35,11 @@ async function main(): Promise<void> {
       await runPool(args.slice(1))
       break
     }
+    case "config": {
+      const { runConfig } = await import("./config.ts")
+      await runConfig(args.slice(1))
+      break
+    }
     case "install": {
       const { install } = await import("./install.ts")
       await install()

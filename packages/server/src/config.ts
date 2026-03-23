@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs"
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "fs"
 import { join } from "path"
 import { homedir, userInfo } from "os"
 import { tangerineConfigSchema } from "@tangerine/shared"
@@ -6,6 +6,7 @@ import type { TangerineConfig, ProjectConfig } from "@tangerine/shared"
 
 export const TANGERINE_HOME = join(homedir(), "tangerine")
 export const CONFIG_PATH = join(TANGERINE_HOME, "config.json")
+export const CREDENTIALS_PATH = join(TANGERINE_HOME, ".credentials")
 
 /** Raw config shape before Zod validation */
 export interface RawConfig {
@@ -55,6 +56,60 @@ export interface AppConfig {
   }
 }
 
+export const ALLOWED_CREDENTIAL_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "GITHUB_TOKEN",
+  "GH_ENTERPRISE_TOKEN",
+  "GH_HOST",
+] as const
+
+export type CredentialKey = (typeof ALLOWED_CREDENTIAL_KEYS)[number]
+
+/** Read credentials from the dotfile. Returns empty object if file missing. */
+export function readCredentialsFile(): Partial<Record<CredentialKey, string>> {
+  if (!existsSync(CREDENTIALS_PATH)) return {}
+  const content = readFileSync(CREDENTIALS_PATH, "utf-8")
+  const creds: Partial<Record<CredentialKey, string>> = {}
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith("#")) continue
+    const eqIndex = trimmed.indexOf("=")
+    if (eqIndex === -1) continue
+    const key = trimmed.slice(0, eqIndex) as CredentialKey
+    const value = trimmed.slice(eqIndex + 1)
+    if (ALLOWED_CREDENTIAL_KEYS.includes(key)) {
+      creds[key] = value
+    }
+  }
+  return creds
+}
+
+/** Write credentials to the dotfile (mode 0600). Merges with existing. */
+export function writeCredentialsFile(updates: Partial<Record<CredentialKey, string>>): void {
+  mkdirSync(TANGERINE_HOME, { recursive: true })
+  const existing = readCredentialsFile()
+  const merged = { ...existing, ...updates }
+  // Remove keys with empty values
+  const entries = Object.entries(merged).filter(([, v]) => v !== undefined && v !== "")
+  const content = entries.map(([k, v]) => `${k}=${v}`).join("\n") + (entries.length ? "\n" : "")
+  writeFileSync(CREDENTIALS_PATH, content)
+  chmodSync(CREDENTIALS_PATH, 0o600)
+}
+
+/** Remove a credential key from the dotfile. */
+export function unsetCredential(key: CredentialKey): boolean {
+  const existing = readCredentialsFile()
+  if (!(key in existing)) return false
+  delete existing[key]
+  // Write directly — don't call writeCredentialsFile which re-reads and merges
+  const entries = Object.entries(existing).filter(([, v]) => v !== undefined && v !== "")
+  const content = entries.map(([k, v]) => `${k}=${v}`).join("\n") + (entries.length ? "\n" : "")
+  writeFileSync(CREDENTIALS_PATH, content)
+  chmodSync(CREDENTIALS_PATH, 0o600)
+  return true
+}
+
 /** Reads and parses a JSON config file, returning null if it doesn't exist */
 function readConfigFile(path: string): Record<string, unknown> | null {
   if (!existsSync(path)) return null
@@ -85,15 +140,19 @@ export function loadConfig(): AppConfig {
 
   const config = tangerineConfigSchema.parse(raw)
 
+  // Dotfile credentials first, env vars override
+  const dotfile = readCredentialsFile()
+
   const opencodeAuthPath = existsSync(OPENCODE_AUTH_PATH) ? OPENCODE_AUTH_PATH : null
-  const claudeOauthToken = process.env["CLAUDE_CODE_OAUTH_TOKEN"] ?? null
-  const anthropicApiKey = process.env["ANTHROPIC_API_KEY"] ?? null
+  const claudeOauthToken = process.env["CLAUDE_CODE_OAUTH_TOKEN"] ?? dotfile.CLAUDE_CODE_OAUTH_TOKEN ?? null
+  const anthropicApiKey = process.env["ANTHROPIC_API_KEY"] ?? dotfile.ANTHROPIC_API_KEY ?? null
 
   if (!opencodeAuthPath && !claudeOauthToken && !anthropicApiKey) {
     throw new Error(
-      "No LLM credentials found. Either run `opencode auth login`, " +
-      "set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), " +
-      "or set ANTHROPIC_API_KEY.",
+      "No LLM credentials found. Either:\n" +
+      "  tangerine config set ANTHROPIC_API_KEY=sk-ant-...\n" +
+      "  tangerine config set CLAUDE_CODE_OAUTH_TOKEN=...\n" +
+      "  or run `opencode auth login`",
     )
   }
 
@@ -103,9 +162,9 @@ export function loadConfig(): AppConfig {
       opencodeAuthPath,
       claudeOauthToken,
       anthropicApiKey,
-      githubToken: process.env["GITHUB_TOKEN"] ?? null,
-      gheToken: process.env["GH_ENTERPRISE_TOKEN"] ?? null,
-      ghHost: process.env["GH_HOST"] ?? "github.com",
+      githubToken: process.env["GITHUB_TOKEN"] ?? dotfile.GITHUB_TOKEN ?? null,
+      gheToken: process.env["GH_ENTERPRISE_TOKEN"] ?? dotfile.GH_ENTERPRISE_TOKEN ?? null,
+      ghHost: process.env["GH_HOST"] ?? dotfile.GH_HOST ?? "github.com",
     },
   }
 }

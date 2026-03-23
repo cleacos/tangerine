@@ -146,6 +146,15 @@ export function startSession(
       )
     }
 
+    // Log which credentials were injected
+    const injectedKeys = Object.keys(envCreds)
+    const llmKeys = injectedKeys.filter((k) => k === "ANTHROPIC_API_KEY" || k === "CLAUDE_CODE_OAUTH_TOKEN")
+    if (llmKeys.length > 0) {
+      yield* activity("creds.injected", `LLM credentials injected: ${llmKeys.join(", ")}`, { keys: injectedKeys })
+    } else if (!creds.opencodeAuthPath) {
+      yield* activity("creds.missing", "No LLM credentials available — agent may fail to authenticate")
+    }
+
     // Setup git credential helper for HTTPS remotes (idempotent)
     if (creds.githubToken || creds.gheToken) {
       const credLines: string[] = []
@@ -364,6 +373,14 @@ export function reconnectSession(
           cause: e,
         }))
       )
+    }
+
+    // Log credential status on reconnect
+    const llmKeys = Object.keys(envCreds).filter((k) => k === "ANTHROPIC_API_KEY" || k === "CLAUDE_CODE_OAUTH_TOKEN")
+    if (llmKeys.length > 0) {
+      yield* activity("creds.injected", `LLM credentials re-injected: ${llmKeys.join(", ")}`)
+    } else if (!creds.opencodeAuthPath) {
+      yield* activity("creds.missing", "No LLM credentials available — agent may fail to authenticate")
     }
 
     // Re-setup git credential helper (idempotent)

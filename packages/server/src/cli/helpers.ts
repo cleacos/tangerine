@@ -141,6 +141,10 @@ Commands:
   project list       List registered projects
   project show       Show project config details
   project remove     Remove a project
+  config set         Set a credential (KEY=VALUE)
+  config get         Get a credential value
+  config unset       Remove a credential
+  config list        List all credentials (masked)
   image build-base   Build base VM from template (one-time)
   image build        Build project golden image (clones from base + runs build.sh)
   image init <name>  Create a build.sh template for an image

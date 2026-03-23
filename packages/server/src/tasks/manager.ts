@@ -67,6 +67,22 @@ export function createTask(
       return yield* Effect.fail(new Error(`Unknown project: ${params.projectId}`))
     }
 
+    // Validate credentials for the requested provider
+    const provider = params.provider ?? "opencode"
+    const creds = deps.credentialConfig
+    if (provider === "claude-code" && !creds.claudeOauthToken && !creds.anthropicApiKey) {
+      return yield* Effect.fail(new Error(
+        "Claude Code requires CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY.\n" +
+        "Set via: tangerine config set ANTHROPIC_API_KEY=sk-ant-..."
+      ))
+    }
+    if (provider === "opencode" && !creds.opencodeAuthPath && !creds.anthropicApiKey) {
+      return yield* Effect.fail(new Error(
+        "OpenCode requires auth.json or ANTHROPIC_API_KEY.\n" +
+        "Run `opencode auth login` or: tangerine config set ANTHROPIC_API_KEY=..."
+      ))
+    }
+
     const id = crypto.randomUUID()
 
     const task = yield* deps.insertTask({
