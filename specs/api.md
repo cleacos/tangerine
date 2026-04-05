@@ -79,6 +79,12 @@ Current task types:
 
 `GET /api/projects` response includes `sshHost`, `sshUser`, and `editor` (`"vscode"|"cursor"|"zed"`) from the top-level config (all optional). Used by the web UI to render SSH deep-links for opening worktrees in the user's editor on the host machine.
 
+`GET /api/projects` returns:
+
+- `modelsByProvider`: the authoritative discovered models keyed by provider
+
+Provider model discovery is owned by the provider contract via `listModels()`. `GET /api/projects` re-reads provider model availability when the response is built.
+
 ### System
 
 | Method | Path | Description |

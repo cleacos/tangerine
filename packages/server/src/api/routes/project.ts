@@ -3,7 +3,6 @@ import { Hono } from "hono"
 import type { AppDeps } from "../app"
 import { mapTaskRow } from "../helpers"
 import { runEffect, runEffectVoid } from "../effect-helpers"
-import { discoverModels, discoverModelsByProvider } from "../../models"
 import { projectConfigSchema, tangerineConfigSchema, TERMINAL_STATUSES } from "@tangerine/shared"
 import { ProjectNotFoundError, ProjectExistsError, ConfigValidationError } from "../../errors"
 import { checkForUpdate, clearUpdateStatus } from "../../self-update"
@@ -16,38 +15,32 @@ import { DAEMON_RESTART_EXIT_CODE } from "../../daemon-exit"
 
 const log = createLogger("project-routes")
 
+function buildProjectsResponse(deps: AppDeps) {
+  const modelsByProvider: Record<string, string[]> = {
+    opencode: deps.agentFactories.opencode.listModels().map((m) => m.id),
+    "claude-code": deps.agentFactories["claude-code"].listModels().map((m) => m.id),
+    codex: deps.agentFactories.codex.listModels().map((m) => m.id),
+    pi: deps.agentFactories.pi.listModels().map((m) => m.id),
+  }
+
+  return {
+    projects: deps.config.config.projects,
+    model: deps.config.config.model,
+    modelsByProvider,
+    sshHost: deps.config.config.sshHost,
+    sshUser: deps.config.config.sshUser,
+    editor: deps.config.config.editor,
+    actionCombos: deps.config.config.actionCombos,
+    shortcuts: deps.config.config.shortcuts,
+  }
+}
+
 export function projectRoutes(deps: AppDeps): Hono {
   const app = new Hono()
 
-  // List all configured projects + available models from OpenCode
+  // List all configured projects + available models from providers
   app.get("/", (c) => {
-    const discovered = discoverModels()
-    const configModels = deps.config.config.models
-    // Use discovered models if available, fall back to config
-    const models = discovered.length > 0
-      ? discovered.map((m) => m.id)
-      : configModels
-
-    // Per-harness model lists
-    const byProvider = discoverModelsByProvider()
-    const modelsByProvider: Record<string, string[]> = {
-      opencode: byProvider.opencode.map((m) => m.id),
-      "claude-code": byProvider["claude-code"].map((m) => m.id),
-      codex: byProvider.codex.map((m) => m.id),
-      pi: byProvider.pi.map((m) => m.id),
-    }
-
-    return c.json({
-      projects: deps.config.config.projects,
-      model: deps.config.config.model,
-      models,
-      modelsByProvider,
-      sshHost: deps.config.config.sshHost,
-      sshUser: deps.config.config.sshUser,
-      editor: deps.config.config.editor,
-      actionCombos: deps.config.config.actionCombos,
-      shortcuts: deps.config.config.shortcuts,
-    })
+    return c.json(buildProjectsResponse(deps))
   })
 
   // Get a single project by name

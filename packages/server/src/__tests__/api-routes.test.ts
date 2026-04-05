@@ -8,6 +8,8 @@ import { createTask as dbCreateTask, updateTaskStatus, insertSessionLog, getTask
 import { TaskNotFoundError } from "../errors"
 import type { TaskRow } from "../db/types"
 import type { RawConfig } from "../config"
+import { createAgentFactories } from "../agent/factories"
+import type { AgentFactories } from "../agent/factories"
 
 function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"]["config"]>): AppDeps {
   const configData = {
@@ -118,6 +120,7 @@ function createMockDeps(db: Database, configOverrides?: Partial<AppDeps["config"
       },
     } satisfies AppDeps["config"],
     getAgentHandle: () => null,
+    agentFactories: createAgentFactories(),
   }
 }
 
@@ -637,6 +640,57 @@ describe("API routes", () => {
       expect(body.model).toBe("openai/gpt-4o")
       // Ensure no credential fields leak
       expect("credentials" in body).toBe(false)
+    })
+  })
+
+  describe("GET /api/projects", () => {
+    test("returns provider-keyed models even when discovery is empty", async () => {
+      deps.agentFactories = {
+        ...deps.agentFactories,
+        opencode: {
+          ...deps.agentFactories.opencode,
+          listModels: () => [],
+        },
+        "claude-code": {
+          ...deps.agentFactories["claude-code"],
+          listModels: () => [],
+        },
+        codex: {
+          ...deps.agentFactories.codex,
+          listModels: () => [],
+        },
+        pi: {
+          ...deps.agentFactories.pi,
+          listModels: () => [],
+        },
+      } satisfies AgentFactories
+      app = createApp(deps).app
+
+      const res = await app.fetch(new Request("http://localhost/api/projects"))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { modelsByProvider: Record<string, string[]> }
+      expect(body.modelsByProvider["claude-code"]).toEqual([])
+    })
+
+    test("returns discovered models grouped by provider", async () => {
+      deps.agentFactories = {
+        ...deps.agentFactories,
+        opencode: {
+          ...deps.agentFactories.opencode,
+          listModels: () => [{ id: "openai/gpt-5.4", name: "GPT-5.4", provider: "openai", providerName: "OpenAI" }],
+        },
+        "claude-code": {
+          ...deps.agentFactories["claude-code"],
+          listModels: () => [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", provider: "anthropic", providerName: "Anthropic" }],
+        },
+      } satisfies AgentFactories
+      app = createApp(deps).app
+
+      const res = await app.fetch(new Request("http://localhost/api/projects"))
+      expect(res.status).toBe(200)
+      const body = await res.json() as { modelsByProvider: Record<string, string[]> }
+      expect(body.modelsByProvider.opencode).toEqual(["openai/gpt-5.4"])
+      expect(body.modelsByProvider["claude-code"]).toEqual(["claude-sonnet-4-6"])
     })
   })
 
