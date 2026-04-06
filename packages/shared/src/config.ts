@@ -13,6 +13,33 @@ const shortcutSchema = z.object({
   alt: z.boolean().optional(),
 })
 
+const defaultWorkerPrompts: z.infer<typeof predefinedPromptSchema>[] = [
+  { label: "Are you proud of your code?", text: "Are you proud of your code?" },
+  { label: "Yes", text: "Yes" },
+  { label: "Merge", text: "Merge" },
+]
+
+const defaultOrchestratorPrompts: z.infer<typeof predefinedPromptSchema>[] = [
+  { label: "Check active tasks", text: "Check active tasks" },
+  { label: "Status update", text: "Status update" },
+]
+
+const defaultReviewerPrompts: z.infer<typeof predefinedPromptSchema>[] = [
+  { label: "Summarize findings", text: "Summarize findings" },
+  { label: "Approve", text: "Approve" },
+]
+
+export const taskTypeConfigSchema = z.object({
+  systemPrompt: z.string().optional(),
+  predefinedPrompts: z.array(predefinedPromptSchema).optional(),
+})
+
+export const taskTypesSchema = z.object({
+  worker: taskTypeConfigSchema.optional(),
+  orchestrator: taskTypeConfigSchema.optional(),
+  reviewer: taskTypeConfigSchema.optional(),
+})
+
 export const projectConfigSchema = z.object({
   name: z.string(),
   repo: z.string(),
@@ -25,20 +52,7 @@ export const projectConfigSchema = z.object({
   prMode: z.enum(["ready", "draft", "none"]).default("none"),
   archived: z.boolean().optional().default(false),
   postUpdateCommand: z.string().optional(),
-  predefinedPrompts: z.array(predefinedPromptSchema).optional().default([
-    { label: "Are you proud of your code?", text: "Are you proud of your code?" },
-    { label: "Yes", text: "Yes" },
-    { label: "Merge", text: "Merge" },
-  ]),
-  orchestratorPrompt: z.string().optional(),
-  orchestratorPrompts: z.array(predefinedPromptSchema).optional().default([
-    { label: "Check active tasks", text: "Check active tasks" },
-    { label: "Status update", text: "Status update" },
-  ]),
-  reviewerPrompts: z.array(predefinedPromptSchema).optional().default([
-    { label: "Summarize findings", text: "Summarize findings" },
-    { label: "Approve", text: "Approve" },
-  ]),
+  taskTypes: taskTypesSchema.optional(),
 })
 
 export const actionComboSchema = z.object({
@@ -86,5 +100,24 @@ export const tangerineConfigSchema = z.object({
 export type PredefinedPrompt = z.infer<typeof predefinedPromptSchema>
 export type ShortcutConfig = z.infer<typeof shortcutSchema>
 export type ActionCombo = z.infer<typeof actionComboSchema>
+export type TaskTypeConfig = z.infer<typeof taskTypeConfigSchema>
 export type ProjectConfig = z.infer<typeof projectConfigSchema>
 export type TangerineConfig = z.infer<typeof tangerineConfigSchema>
+
+const DEFAULTS: Record<string, { predefinedPrompts: PredefinedPrompt[] }> = {
+  worker: { predefinedPrompts: defaultWorkerPrompts },
+  orchestrator: { predefinedPrompts: defaultOrchestratorPrompts },
+  reviewer: { predefinedPrompts: defaultReviewerPrompts },
+}
+
+/** Resolve per-task-type config from the taskTypes section, with defaults. */
+export function resolveTaskTypeConfig(
+  project: ProjectConfig,
+  taskType: "worker" | "orchestrator" | "reviewer",
+): { systemPrompt?: string; predefinedPrompts: PredefinedPrompt[] } {
+  const override = project.taskTypes?.[taskType]
+  return {
+    systemPrompt: override?.systemPrompt,
+    predefinedPrompts: override?.predefinedPrompts ?? DEFAULTS[taskType]!.predefinedPrompts,
+  }
+}

@@ -100,9 +100,22 @@ export function projectRoutes(deps: AppDeps): Hono {
           return yield* Effect.fail(new ProjectNotFoundError({ name }))
         }
 
-        // Merge fields — name is immutable
+        // Merge fields — name is immutable, taskTypes is deep-merged per task type
         const existing = deps.config.config.projects[index]!
         const merged = { ...existing, ...body, name }
+        if (body.taskTypes && typeof body.taskTypes === "object") {
+          const prev = (existing.taskTypes ?? {}) as Record<string, Record<string, unknown>>
+          const next = body.taskTypes as Record<string, Record<string, unknown>>
+          merged.taskTypes = { ...prev }
+          for (const [tt, val] of Object.entries(next)) {
+            const ttMerged = { ...prev[tt], ...val }
+            // Null values signal deletion — remove them so Zod sees undefined
+            for (const k of Object.keys(ttMerged)) {
+              if (ttMerged[k] === null) delete ttMerged[k]
+            }
+            ;(merged.taskTypes as Record<string, unknown>)[tt] = ttMerged
+          }
+        }
 
         const parsed = projectConfigSchema.safeParse(merged)
         if (!parsed.success) {

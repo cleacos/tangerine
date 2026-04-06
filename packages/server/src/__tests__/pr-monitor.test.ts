@@ -5,7 +5,8 @@ import { createTestDb } from "./helpers"
 import { extractPrUrl, extractGithubSlug, getPrLookupTargets, pollPrStatuses } from "../tasks/pr-monitor"
 import type { PrMonitorDeps, PrState } from "../tasks/pr-monitor"
 import type { TaskRow } from "../db/types"
-import { buildSystemNotes } from "../tasks/prompts"
+import { buildSystemNotes, buildSystemLayer, buildUserLayer } from "../tasks/prompts"
+import { resolveTaskTypeConfig, type ProjectConfig } from "@tangerine/shared"
 
 // ---------------------------------------------------------------------------
 // extractPrUrl
@@ -434,5 +435,119 @@ describe("buildSystemNotes", () => {
   test("does not inject prMode instruction for non-worker tasks", () => {
     const notes = buildSystemNotes("test-id", { taskType: "reviewer", prMode: "draft" })
     expect(notes.some((n) => n.includes("PR MODE"))).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildSystemLayer / buildUserLayer — prompt layer split
+// ---------------------------------------------------------------------------
+
+describe("buildSystemLayer", () => {
+  test("always includes Tangerine identity", () => {
+    const notes = buildSystemLayer("test-id", { taskType: "worker" })
+    expect(notes.some((n) => n.includes("TANGERINE"))).toBe(true)
+  })
+
+  test("includes delegation rules for orchestrator", () => {
+    const notes = buildSystemLayer("test-id", { taskType: "orchestrator" })
+    expect(notes.some((n) => n.includes("DELEGATION"))).toBe(true)
+    expect(notes.some((n) => n.includes("CONTEXT"))).toBe(true)
+  })
+
+  test("excludes delegation rules for workers", () => {
+    const notes = buildSystemLayer("test-id", { taskType: "worker" })
+    expect(notes.some((n) => n.includes("DELEGATION"))).toBe(false)
+  })
+
+  test("does not include style note", () => {
+    const notes = buildSystemLayer("test-id", { taskType: "worker" })
+    expect(notes.some((n) => n.includes("STYLE"))).toBe(false)
+  })
+})
+
+describe("buildUserLayer", () => {
+  test("includes default style note when no custom prompt", () => {
+    const notes = buildUserLayer("test-id", { taskType: "worker" })
+    expect(notes.some((n) => n.includes("STYLE"))).toBe(true)
+  })
+
+  test("includes setup note when setupCommand provided", () => {
+    const notes = buildUserLayer("test-id", { taskType: "worker", setupCommand: "bun install" })
+    expect(notes.some((n) => n.includes("bun install"))).toBe(true)
+  })
+
+  test("replaces defaults with custom system prompt", () => {
+    const notes = buildUserLayer("test-id", {
+      taskType: "worker",
+      customSystemPrompt: "You are a security-focused engineer.",
+      setupCommand: "bun install",
+    })
+    expect(notes).toEqual(["You are a security-focused engineer."])
+    expect(notes.some((n) => n.includes("STYLE"))).toBe(false)
+  })
+
+  test("replaces defaults for reviewer with custom system prompt", () => {
+    const notes = buildUserLayer("test-id", {
+      taskType: "reviewer",
+      customSystemPrompt: "Focus on performance issues.",
+    })
+    expect(notes).toEqual(["Focus on performance issues."])
+  })
+
+  test("uses defaults when no custom prompt provided", () => {
+    const notes = buildUserLayer("test-id", { taskType: "reviewer" })
+    expect(notes.some((n) => n.includes("STYLE"))).toBe(true)
+  })
+
+  test("uses defaults for orchestrator when no custom prompt", () => {
+    const notes = buildUserLayer("test-id", { taskType: "orchestrator" })
+    expect(notes.some((n) => n.includes("STYLE"))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveTaskTypeConfig — per-task-type config resolution
+// ---------------------------------------------------------------------------
+
+describe("resolveTaskTypeConfig", () => {
+  const baseProject = { name: "test", repo: "test", setup: "bun install" } as ProjectConfig
+
+  test("returns defaults when no taskTypes configured", () => {
+    const result = resolveTaskTypeConfig(baseProject, "worker")
+    expect(result.predefinedPrompts.length).toBeGreaterThan(0)
+    expect(result.systemPrompt).toBeUndefined()
+  })
+
+  test("returns worker predefinedPrompts from taskTypes", () => {
+    const project = {
+      ...baseProject,
+      taskTypes: { worker: { predefinedPrompts: [{ label: "new", text: "new" }] } },
+    } as ProjectConfig
+    const result = resolveTaskTypeConfig(project, "worker")
+    expect(result.predefinedPrompts).toEqual([{ label: "new", text: "new" }])
+  })
+
+  test("returns orchestrator systemPrompt from taskTypes", () => {
+    const project = {
+      ...baseProject,
+      taskTypes: { orchestrator: { systemPrompt: "custom orch" } },
+    } as ProjectConfig
+    const result = resolveTaskTypeConfig(project, "orchestrator")
+    expect(result.systemPrompt).toBe("custom orch")
+  })
+
+  test("returns reviewer config from taskTypes", () => {
+    const project = {
+      ...baseProject,
+      taskTypes: { reviewer: { predefinedPrompts: [{ label: "rev", text: "rev" }] } },
+    } as ProjectConfig
+    const result = resolveTaskTypeConfig(project, "reviewer")
+    expect(result.predefinedPrompts).toEqual([{ label: "rev", text: "rev" }])
+  })
+
+  test("returns default prompts per task type", () => {
+    expect(resolveTaskTypeConfig(baseProject, "worker").predefinedPrompts[0]!.label).toBe("Are you proud of your code?")
+    expect(resolveTaskTypeConfig(baseProject, "orchestrator").predefinedPrompts[0]!.label).toBe("Check active tasks")
+    expect(resolveTaskTypeConfig(baseProject, "reviewer").predefinedPrompts[0]!.label).toBe("Summarize findings")
   })
 })

@@ -8,7 +8,7 @@ import { createLogger } from "../logger"
 import { SessionStartError } from "../errors"
 import { getHandleMeta as getOpenCodeHandleMeta } from "../agent/opencode-provider"
 import { getRepoDir, resolveWorkspace } from "../config"
-import type { TangerineConfig } from "@tangerine/shared"
+import { resolveTaskTypeConfig, type TangerineConfig } from "@tangerine/shared"
 import type { TaskRow } from "../db/types"
 import { initPool, acquireSlot, acquireOrchestratorSlot } from "./worktree-pool"
 import { buildSystemNotes } from "./prompts"
@@ -42,9 +42,16 @@ export interface ProjectConfig {
   setup: string
   poolSize?: number
   defaultProvider?: string
-  orchestratorPrompt?: string
   archived?: boolean
   prMode?: "ready" | "draft" | "none"
+  taskTypes?: import("@tangerine/shared").ProjectConfig["taskTypes"]
+}
+
+/** Resolve custom system prompt for a task type from taskTypes config. */
+function resolveCustomSystemPrompt(config: ProjectConfig, taskType: string | null | undefined): string | undefined {
+  const tt = taskType as "worker" | "orchestrator" | "reviewer" | undefined
+  if (!tt) return undefined
+  return config.taskTypes?.[tt]?.systemPrompt
 }
 
 /** Run a local command via Bun.spawn, return stdout/stderr/exitCode */
@@ -248,6 +255,7 @@ export function startSession(
       setupCommand: config.setup,
       taskType: task.type ?? undefined,
       prMode: config.prMode,
+      customSystemPrompt: resolveCustomSystemPrompt(config, task.type),
     })
     const agentHandle = yield* deps.agentFactory.start({
       taskId: task.id,
@@ -345,10 +353,13 @@ export function reconnectSession(
     // 3. Start agent — resume session if we have a session ID (with timeout)
     yield* activity("agent.reconnecting", "Restarting agent process")
     const project = deps.tangerineConfig.projects.find((p) => p.name === task.project_id)
+    const taskType = task.type as "worker" | "orchestrator" | "reviewer" | undefined
+    const resolved = project && taskType ? resolveTaskTypeConfig(project, taskType) : undefined
     const systemNotes = buildSystemNotes(task.id, {
       setupCommand: project?.setup,
-      taskType: task.type ?? undefined,
+      taskType: taskType,
       prMode: project?.prMode,
+      customSystemPrompt: resolved?.systemPrompt,
     })
     const agentHandle = yield* deps.agentFactory.start({
       taskId: task.id,
