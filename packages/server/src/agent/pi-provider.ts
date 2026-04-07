@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { scanSkillsDir } from "./skill-scanner"
+import { killDescendants, killProcessTreeEscalated } from "./process-tree"
 
 const log = createLogger("pi-provider")
 export const PI_PROVIDER_METADATA: ProviderMetadata = {
@@ -428,6 +429,9 @@ export function createPiProvider(): AgentFactory {
             abort() {
               return Effect.try({
                 try: () => {
+                  // Kill child processes (e.g. bash commands) but keep the
+                  // Pi session alive so it can accept follow-up prompts.
+                  killDescendants(proc.pid, "SIGTERM")
                   sendCommand({ type: "abort" })
                 },
                 catch: (e) =>
@@ -454,11 +458,7 @@ export function createPiProvider(): AgentFactory {
                 } catch {
                   // stdin may already be closed
                 }
-                try {
-                  proc.kill()
-                } catch {
-                  // process may already be dead
-                }
+                killProcessTreeEscalated(proc.pid)
                 taskLog.info("Pi shutdown")
               })
             },
