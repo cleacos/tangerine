@@ -8,6 +8,7 @@ import { ProjectNotFoundError, ProjectExistsError, ConfigValidationError } from 
 import { checkForUpdate, clearUpdateStatus } from "../../self-update"
 import { getRepoDir } from "../../config"
 import { createLogger } from "../../logger"
+import { extractGithubSlug, getRepoForkInfo, syncForkRepo } from "../../gh"
 import { listTasks } from "../../db/queries"
 import { deletePoolForProject, localExec } from "../../tasks/worktree-pool"
 import type { WorktreeSlotRow } from "../../db/types"
@@ -205,9 +206,16 @@ export function projectRoutes(deps: AppDeps): Hono {
 
     const repoDir = getRepoDir(deps.config.config, name)
     const defaultBranch = project.defaultBranch ?? "main"
-    const status = await Effect.runPromise(checkForUpdate(repoDir, defaultBranch))
+    const [status, forkInfo] = await Promise.all([
+      Effect.runPromise(checkForUpdate(repoDir, defaultBranch)),
+      (async () => {
+        const slug = extractGithubSlug(project.repo)
+        if (!slug) return { isFork: false, parentSlug: null }
+        try { return await getRepoForkInfo(slug) } catch { return { isFork: false, parentSlug: null } }
+      })(),
+    ])
 
-    return c.json(status)
+    return c.json({ ...status, ...forkInfo })
   })
 
   // Pull latest from remote and run postUpdateCommand
@@ -244,7 +252,24 @@ export function projectRoutes(deps: AppDeps): Hono {
           Effect.orElse(() => Effect.succeed("unknown"))
         )
 
-        // Reset local changes and pull (remote is source of truth)
+        // If the repo is a fork, sync from upstream first
+        const slug = extractGithubSlug(project.repo)
+        if (slug) {
+          const forkInfo = yield* Effect.tryPromise({
+            try: () => getRepoForkInfo(slug),
+            catch: () => new Error("Failed to check fork status"),
+          }).pipe(Effect.catchAll(() => Effect.succeed({ isFork: false, parentSlug: null })))
+
+          if (forkInfo.isFork) {
+            log.info("Syncing fork from upstream before pull", { name, slug })
+            yield* Effect.tryPromise({
+              try: () => syncForkRepo(slug),
+              catch: (e) => e instanceof Error ? e : new Error(String(e)),
+            })
+          }
+        }
+
+        // Fetch and reset to remote (source of truth)
         yield* exec("git fetch origin")
         yield* exec(`git reset --hard origin/${defaultBranch}`)
 
@@ -285,6 +310,80 @@ export function projectRoutes(deps: AppDeps): Hono {
         }
 
         return { updated, from, to, postUpdateOutput, restart }
+      })
+    )
+  })
+
+  // Check if a project repo is a fork and return fork info
+  app.get("/:name/fork-status", async (c) => {
+    const name = c.req.param("name")
+    const project = deps.config.config.projects.find((p) => p.name === name)
+    if (!project) return c.json({ error: "Project not found" }, 404)
+
+    const slug = extractGithubSlug(project.repo)
+    if (!slug) return c.json({ isFork: false, parentSlug: null })
+
+    try {
+      const info = await getRepoForkInfo(slug)
+      return c.json(info)
+    } catch {
+      return c.json({ isFork: false, parentSlug: null })
+    }
+  })
+
+  // Sync a forked repo from its upstream
+  app.post("/:name/fork-sync", async (c) => {
+    const name = c.req.param("name")
+    return runEffect(c,
+      Effect.gen(function* () {
+        const project = deps.config.config.projects.find((p) => p.name === name)
+        if (!project) return yield* Effect.fail(new ProjectNotFoundError({ name }))
+
+        const slug = extractGithubSlug(project.repo)
+        if (!slug) return yield* Effect.fail(new Error("Could not extract GitHub slug from repo URL"))
+
+        const forkInfo = yield* Effect.tryPromise({
+          try: () => getRepoForkInfo(slug),
+          catch: (e) => e instanceof Error ? e : new Error(String(e)),
+        })
+
+        if (!forkInfo.isFork) {
+          return yield* Effect.fail(new Error("Repository is not a fork"))
+        }
+
+        log.info("Syncing fork from upstream", { name, slug, upstream: forkInfo.parentSlug })
+
+        yield* Effect.tryPromise({
+          try: () => syncForkRepo(slug),
+          catch: (e) => e instanceof Error ? e : new Error(String(e)),
+        })
+
+        // Update local repo after sync
+        const repoDir = getRepoDir(deps.config.config, name)
+        const defaultBranch = project.defaultBranch ?? "main"
+        const exec = (cmd: string) => Effect.tryPromise({
+          try: async () => {
+            const proc = Bun.spawn(["bash", "-c", cmd], {
+              cwd: repoDir,
+              stdout: "pipe",
+              stderr: "pipe",
+            })
+            const [stdout, stderr, exitCode] = await Promise.all([
+              new Response(proc.stdout).text(),
+              new Response(proc.stderr).text(),
+              proc.exited,
+            ])
+            if (exitCode !== 0) throw new Error(stderr.trim() || stdout.trim() || `exit ${exitCode}`)
+            return stdout.trim()
+          },
+          catch: (e) => e instanceof Error ? e : new Error(String(e)),
+        })
+
+        yield* exec("git fetch origin")
+        yield* exec(`git reset --hard origin/${defaultBranch}`)
+
+        log.info("Fork synced successfully", { name, slug })
+        return { synced: true, upstream: forkInfo.parentSlug }
       })
     )
   })

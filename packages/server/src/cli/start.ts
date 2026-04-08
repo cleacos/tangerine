@@ -26,7 +26,7 @@ import type { HealthCheckDeps } from "../tasks/health"
 import { reconnectSessionWithRetry } from "../tasks/retry"
 import { AgentError } from "../errors"
 import { extractPrUrl, verifyPrBranch, startPrMonitor } from "../tasks/pr-monitor"
-import { ghSpawnEnv, isGithubRepo } from "../gh"
+import { ghSpawnEnv, isGithubRepo, extractGithubSlug, getRepoForkInfo } from "../gh"
 import type { PrMonitorDeps } from "../tasks/pr-monitor"
 import { initSystemLog, cleanupSystemLogs } from "../system-log"
 import type { AgentHandle } from "../agent/provider"
@@ -650,6 +650,20 @@ export async function start(): Promise<void> {
                       const hasCommits = await branchHasCommits(db, taskId, projConfig)
                       if (!hasCommits || st.prUrlSaved) return
 
+                      // Resolve upstream slug for fork repos
+                      let nudgeUpstreamSlug: string | undefined
+                      if (projConfig?.repo) {
+                        const slug = extractGithubSlug(projConfig.repo)
+                        if (slug) {
+                          try {
+                            const forkInfo = await getRepoForkInfo(slug)
+                            if (forkInfo.isFork && forkInfo.parentSlug) {
+                              nudgeUpstreamSlug = forkInfo.parentSlug
+                            }
+                          } catch { /* ignore */ }
+                        }
+                      }
+
                       st.prNudgeSent = true
                       const handle = agentHandles.get(taskId)
                       if (handle) {
@@ -657,7 +671,7 @@ export async function start(): Promise<void> {
                         Effect.runPromise(
                           handle.sendPrompt(
                             `[TANGERINE: You have commits on your branch but no pull request has been created. ` +
-                            `${buildPrWorkflowNote(taskId, undefined, projConfig?.prMode)} ` +
+                            `${buildPrWorkflowNote(taskId, undefined, projConfig?.prMode, nudgeUpstreamSlug)} ` +
                             `A PR is required for the task to be considered complete.]`
                           ).pipe(Effect.catchAll(() => Effect.void))
                         )

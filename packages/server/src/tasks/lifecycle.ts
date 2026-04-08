@@ -13,6 +13,7 @@ import type { TaskRow } from "../db/types"
 import { initPool, acquireSlot, acquireOrchestratorSlot } from "./worktree-pool"
 import { buildSystemNotes } from "./prompts"
 import { killProcessTree } from "../agent/process-tree"
+import { extractGithubSlug, getRepoForkInfo } from "../gh"
 
 const log = createLogger("lifecycle")
 
@@ -250,13 +251,29 @@ export function startSession(
       `pkill -f "claude.*${worktreePath}" 2>/dev/null; true`,
     ).pipe(Effect.catchAll(() => Effect.void))
 
-    // 5. Start agent locally (with timeout to prevent indefinite hangs)
+    // 5. Detect fork upstream for PR targeting
+    let upstreamSlug: string | undefined
+    if (task.type === "worker" && config.prMode !== "none") {
+      const slug = extractGithubSlug(config.repo)
+      if (slug) {
+        const forkInfo = yield* Effect.tryPromise({
+          try: () => getRepoForkInfo(slug),
+          catch: () => ({ isFork: false, parentSlug: null }),
+        }).pipe(Effect.catchAll(() => Effect.succeed({ isFork: false, parentSlug: null })))
+        if (forkInfo.isFork && forkInfo.parentSlug) {
+          upstreamSlug = forkInfo.parentSlug
+        }
+      }
+    }
+
+    // 6. Start agent locally (with timeout to prevent indefinite hangs)
     yield* activity("agent.starting", "Starting agent")
     const systemNotes = buildSystemNotes(task.id, {
       setupCommand: config.setup,
       taskType: task.type ?? undefined,
       prMode: config.prMode,
       customSystemPrompt: resolveCustomSystemPrompt(config, task.type),
+      upstreamSlug,
     })
     const agentHandle = yield* deps.agentFactory.start({
       taskId: task.id,
@@ -356,11 +373,28 @@ export function reconnectSession(
     const project = deps.tangerineConfig.projects.find((p) => p.name === task.project_id)
     const taskType = task.type as "worker" | "orchestrator" | "reviewer" | undefined
     const resolved = project && taskType ? resolveTaskTypeConfig(project, taskType) : undefined
+
+    // Detect fork upstream for PR targeting on reconnect
+    let reconnectUpstreamSlug: string | undefined
+    if (taskType === "worker" && project?.prMode !== "none" && project?.repo) {
+      const slug = extractGithubSlug(project.repo)
+      if (slug) {
+        const forkInfo = yield* Effect.tryPromise({
+          try: () => getRepoForkInfo(slug),
+          catch: () => ({ isFork: false, parentSlug: null }),
+        }).pipe(Effect.catchAll(() => Effect.succeed({ isFork: false, parentSlug: null })))
+        if (forkInfo.isFork && forkInfo.parentSlug) {
+          reconnectUpstreamSlug = forkInfo.parentSlug
+        }
+      }
+    }
+
     const systemNotes = buildSystemNotes(task.id, {
       setupCommand: project?.setup,
       taskType: taskType,
       prMode: project?.prMode,
       customSystemPrompt: resolved?.systemPrompt,
+      upstreamSlug: reconnectUpstreamSlug,
     })
     const agentHandle = yield* deps.agentFactory.start({
       taskId: task.id,

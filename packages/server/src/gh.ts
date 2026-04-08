@@ -65,3 +65,48 @@ export function extractGithubSlug(repoUrl: string): string | null {
 export function isGithubRepo(repo: string): boolean {
   return /github(?:\.[a-z0-9-]+)*\.[a-z]+/.test(repo) || /^[^/]+\/[^/]+$/.test(repo)
 }
+
+export interface RepoForkInfo {
+  isFork: boolean
+  parentSlug: string | null
+}
+
+/**
+ * Check if a GitHub repo is a fork and return its parent slug.
+ * Uses `gh api` to query the repo metadata.
+ */
+export async function getRepoForkInfo(repoSlug: string): Promise<RepoForkInfo> {
+  const proc = Bun.spawn(
+    ["gh", "api", `repos/${repoSlug}`, "--jq", "[.fork, .parent.full_name] | @tsv"],
+    ghSpawnEnv(),
+  )
+  const text = await new Response(proc.stdout).text()
+  const exitCode = await proc.exited
+  if (exitCode !== 0) {
+    return { isFork: false, parentSlug: null }
+  }
+  const parts = text.trim().split("\t")
+  const isFork = parts[0] === "true"
+  const parentSlug = isFork && parts[1] ? parts[1] : null
+  return { isFork, parentSlug }
+}
+
+/**
+ * Sync a forked repo from its upstream using `gh repo sync`.
+ * Returns stdout on success, throws on failure.
+ */
+export async function syncForkRepo(repoSlug: string): Promise<string> {
+  const proc = Bun.spawn(
+    ["gh", "repo", "sync", repoSlug],
+    ghSpawnEnv(),
+  )
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
+  const exitCode = await proc.exited
+  if (exitCode !== 0) {
+    throw new Error(stderr.trim() || stdout.trim() || `gh repo sync exited with ${exitCode}`)
+  }
+  return stdout.trim()
+}

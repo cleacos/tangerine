@@ -235,6 +235,13 @@ export interface ProjectUpdateStatus {
   local: string
   remote: string
   checkedAt: string | null
+  isFork: boolean
+  parentSlug: string | null
+}
+
+export interface ForkSyncResult {
+  synced: boolean
+  upstream: string | null
 }
 
 export interface ProjectUpdateResult {
@@ -273,6 +280,12 @@ export async function archiveProject(projectName: string): Promise<void> {
 
 export async function unarchiveProject(projectName: string): Promise<void> {
   return request<void>(`/api/projects/${encodeURIComponent(projectName)}/unarchive`, { method: "POST" })
+}
+
+export async function syncProjectFork(projectName: string): Promise<ForkSyncResult> {
+  return request<ForkSyncResult>(`/api/projects/${encodeURIComponent(projectName)}/fork-sync`, {
+    method: "POST",
+  })
 }
 
 export async function updateProjectRepo(projectName: string): Promise<ProjectUpdateResult> {

@@ -17,6 +17,8 @@ export interface SystemNotesInfo {
   prMode?: "ready" | "draft" | "none"
   /** Custom system prompt from taskTypes config (already resolved by caller). */
   customSystemPrompt?: string
+  /** For fork repos: the upstream repo slug (owner/repo) to target PRs against. */
+  upstreamSlug?: string
 }
 
 const DEFAULT_STYLE = `[STYLE: Be extremely short and concise in all responses — sacrifice grammar for brevity. Key info only, no walls of text. Applies to all conversations and reviews.]`
@@ -25,13 +27,14 @@ const DEFAULT_STYLE = `[STYLE: Be extremely short and concise in all responses �
  * Build the PR workflow instruction: rename branch, push, create PR.
  * Used in initial prompts, reconnect nudges, and PR nudges.
  */
-export function buildPrWorkflowNote(taskId: string, port = apiPort(), prMode: "ready" | "draft" | "none" = "none"): string {
+export function buildPrWorkflowNote(taskId: string, port = apiPort(), prMode: "ready" | "draft" | "none" = "none", upstreamSlug?: string): string {
+  const repoFlag = upstreamSlug ? ` --repo ${upstreamSlug}` : ""
   const prCommand =
     prMode === "none"
       ? "nothing — prMode is none, do NOT push or create a PR."
       : prMode === "ready"
-        ? "`git push -u origin HEAD` then `gh pr create`."
-        : "`git push -u origin HEAD` then `gh pr create --draft`."
+        ? `\`git push -u origin HEAD\` then \`gh pr create${repoFlag}\`.`
+        : `\`git push -u origin HEAD\` then \`gh pr create --draft${repoFlag}\`.`
   return (
     `1) Rename your branch via: curl -X POST http://localhost:${port}/api/tasks/${taskId}/rename-branch ` +
     `-H "Content-Type: application/json" -d '{"branch":"fix/<descriptive-slug>"}'. ` +
@@ -40,14 +43,16 @@ export function buildPrWorkflowNote(taskId: string, port = apiPort(), prMode: "r
 }
 
 /** Build a mandatory prMode instruction injected into the system prompt. */
-export function buildPrModeInstruction(prMode: "ready" | "draft" | "none"): string {
+export function buildPrModeInstruction(prMode: "ready" | "draft" | "none", upstreamSlug?: string): string {
+  const repoFlag = upstreamSlug ? ` --repo ${upstreamSlug}` : ""
+  const forkNote = upstreamSlug ? ` This is a fork — PRs must target the upstream repo (${upstreamSlug}).` : ""
   if (prMode === "ready") {
-    return `This project's prMode is "ready". You MUST create a ready-to-review PR: \`gh pr create\`. Never use --draft.`
+    return `This project's prMode is "ready". You MUST create a ready-to-review PR: \`gh pr create${repoFlag}\`. Never use --draft.${forkNote}`
   }
   if (prMode === "none") {
     return `This project's prMode is "none". Do NOT push or create a PR. Just commit your work and stop.`
   }
-  return `This project's prMode is "draft". You MUST pass --draft when creating PRs: \`gh pr create --draft\`. Never create a ready PR.`
+  return `This project's prMode is "draft". You MUST pass --draft when creating PRs: \`gh pr create --draft${repoFlag}\`. Never create a ready PR.${forkNote}`
 }
 
 /**
@@ -60,10 +65,10 @@ export function buildSystemLayer(taskId: string, info: SystemNotesInfo, port = a
 
   if (info.taskType === "worker") {
     const prMode = info.prMode ?? "none"
-    const prModeInstruction = buildPrModeInstruction(prMode)
+    const prModeInstruction = buildPrModeInstruction(prMode, info.upstreamSlug)
     notes.push(`[PR MODE — CRITICAL: ${prModeInstruction}]`)
     if (prMode !== "none") {
-      notes.push(`[NOTE: When your work is complete: ${buildPrWorkflowNote(taskId, port, prMode)} Do not stop at just committing.]`)
+      notes.push(`[NOTE: When your work is complete: ${buildPrWorkflowNote(taskId, port, prMode, info.upstreamSlug)} Do not stop at just committing.]`)
       notes.push(`[PR TEMPLATE: Before running \`gh pr create\`, check for a PR template: \`cat .github/pull_request_template.md 2>/dev/null || cat .github/PULL_REQUEST_TEMPLATE.md 2>/dev/null\`. If a PR template exists in the repo, you MUST use it as the structure for your PR body. Follow it strictly — do not skip sections, do not add sections not in the template.]`)
     }
   }
