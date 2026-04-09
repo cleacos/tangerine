@@ -192,15 +192,6 @@ export function loadConfig(overrides?: { configPath?: string }): AppConfig {
     process.env["CLAUDE_CODE_OAUTH_TOKEN"] ?? dotfile.CLAUDE_CODE_OAUTH_TOKEN ?? readClaudeCliToken()
   const anthropicApiKey = process.env["ANTHROPIC_API_KEY"] ?? dotfile.ANTHROPIC_API_KEY ?? null
 
-  if (!opencodeAuthPath && !claudeOauthToken && !anthropicApiKey) {
-    throw new Error(
-      "No LLM credentials found. Either:\n" +
-      "  tangerine config set ANTHROPIC_API_KEY=sk-ant-...\n" +
-      "  tangerine config set CLAUDE_CODE_OAUTH_TOKEN=...\n" +
-      "  or run `opencode auth login`",
-    )
-  }
-
   return {
     config,
     credentials: {
