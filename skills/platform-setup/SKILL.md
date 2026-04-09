@@ -61,10 +61,12 @@ User runs `/platform-setup` from their host machine (macOS or Linux) and wants t
      && sudo apt update && sudo apt install gh -y
    ```
 
-2. **Install agent CLIs**:
+2. **Verify agent CLIs are installed and authenticated**:
    ```bash
-   npm install -g @anthropic-ai/claude-code opencode-ai
+   which claude && claude --version
+   which opencode && opencode --version
    ```
+   Tangerine assumes agents are already installed and authenticated. If any are missing, install them (`npm install -g @anthropic-ai/claude-code opencode-ai`) and authenticate each before starting Tangerine — Tangerine does not manage credentials.
 
 3. **Clone tangerine**:
    ```bash
@@ -236,17 +238,15 @@ ln -s /path/to/skill ~/.pi/agent/skills/my-skill
 
 ## Credentials
 
-Credentials are set up ONCE in the VM environment, not managed per-task:
+Tangerine does not manage agent credentials. Before starting Tangerine, ensure each agent you plan to use is already installed and authenticated:
 
-```bash
-# LLM API keys (in ~/.env or shell profile)
-export ANTHROPIC_API_KEY=sk-ant-...
-# Or for Claude Code OAuth:
-export CLAUDE_CODE_OAUTH_TOKEN=...
+- **Claude Code**: `claude --version` works and `claude` can make API calls (OAuth or `ANTHROPIC_API_KEY` set)
+- **OpenCode**: `opencode --version` works and `opencode` can make API calls
+- **Codex**: `codex --version` works and credentials are configured
 
-# gh CLI auth
-gh auth login
-```
+Tangerine does not configure or verify credentials — it relies on the agent's own auth being in place. If an agent fails to start due to missing credentials, authenticate it directly (e.g. run `claude` once to complete OAuth, or set the relevant API key in your shell profile) and retry.
+
+`gh` CLI is also required for GitHub integration (PR tracking, webhook setup). Tangerine checks `gh auth status` on startup and will warn if it is not authenticated — run `gh auth login` to fix it.
 
 ## File Locations
 
