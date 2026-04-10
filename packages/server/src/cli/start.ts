@@ -233,13 +233,13 @@ export async function start(): Promise<void> {
         } else {
           const hasGithubProject = config.config.projects.some((p) => isGithubRepo(p.repo))
           if (hasGithubProject) {
-            missing.push("gh CLI is not authenticated — PR capture and GitHub polling will not work. Run `gh auth login`.")
+            warnings.push("gh CLI is not authenticated — PR capture and GitHub polling will not work. Run `gh auth login`.")
           }
         }
       } else {
         const hasGithubProject = config.config.projects.some((p) => isGithubRepo(p.repo))
         if (hasGithubProject) {
-          missing.push("gh CLI is not installed — PR capture and auto-complete will not work. Install from https://cli.github.com/")
+          warnings.push("gh CLI is not installed — PR capture and auto-complete will not work. Install from https://cli.github.com/")
         }
       }
 
@@ -264,8 +264,16 @@ export async function start(): Promise<void> {
       for (const msg of warnings) log.warn(msg)
       if (missing.length > 0) {
         for (const msg of missing) log.error(msg)
-        log.error("Fix the above issues and restart the server.")
         process.exit(1)
+      }
+
+      const availableProviders = Object.entries(systemCapabilities.providers)
+        .filter(([, v]) => v.available)
+        .map(([k]) => k)
+      if (warnings.length > 0) {
+        log.warn(`Starting with degraded capabilities (${warnings.length} warning${warnings.length === 1 ? "" : "s"} above) — available providers: [${availableProviders.join(", ") || "none"}]`)
+      } else {
+        log.info(`System checks passed — available providers: [${availableProviders.join(", ") || "none"}]`)
       }
     } else {
       // In test mode, assume all tools available
