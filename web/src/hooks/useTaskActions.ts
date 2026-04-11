@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { TERMINAL_STATUSES } from "@tangerine/shared"
 import type { Task } from "@tangerine/shared"
 import {
   registerActions,
@@ -116,8 +117,7 @@ export function useTaskActions(
     }
 
     // Delete — terminated tasks
-    const terminated = new Set(["done", "completed", "failed", "cancelled"])
-    if (terminated.has(task.status)) {
+    if (TERMINAL_STATUSES.has(task.status)) {
       defs.push({
         id: "task.delete",
         label: "Delete task",

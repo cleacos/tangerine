@@ -4,7 +4,6 @@ import type { Task } from "@tangerine/shared"
 import { Topbar } from "./Topbar"
 import { CommandPalette } from "./CommandPalette"
 import { TasksSidebar } from "./TasksSidebar"
-import { ProjectSwitcher } from "./ProjectSwitcher"
 import { useProjectNav } from "../hooks/useProjectNav"
 import { useProject } from "../context/ProjectContext"
 import { useTaskSearch } from "../hooks/useTaskSearch"
@@ -22,8 +21,8 @@ export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const location = useLocation()
   const { link, navigate } = useProjectNav()
-  const { current } = useProject()
-  const { query, setQuery, tasks, loading: tasksLoading, refetch } = useTaskSearch(current?.name)
+  const { projects } = useProject()
+  const { query, setQuery, tasks, loading: tasksLoading, refetch } = useTaskSearch()
 
   // Register all app-wide actions + activate global shortcuts
   useAppActions()
@@ -84,7 +83,6 @@ export function Layout() {
               </Link>
             </nav>
           </div>
-          <ProjectSwitcher variant="mobile" />
         </div>
       )}
 
@@ -99,6 +97,7 @@ export function Layout() {
           `} inert={sidebarOpen ? undefined : true}>
             <TasksSidebar
               tasks={tasks}
+              projects={projects}
               searchQuery={query}
               onSearchChange={setQuery}
               onNewAgent={() => navigate("/?focus=1")}

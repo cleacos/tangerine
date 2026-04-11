@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useParams, Link, useOutletContext } from "react-router-dom"
 import type { SidebarContext } from "../components/Layout"
-import { resolveTaskTypeConfig, type Task } from "@tangerine/shared"
+import { resolveTaskTypeConfig, TERMINAL_STATUSES, type Task } from "@tangerine/shared"
 import { fetchTask, fetchChildTasks, changeTaskConfig, markTaskSeen, resolveTask, startTask } from "../lib/api"
 import { getStatusConfig } from "../lib/status"
 import { useSession } from "../hooks/useSession"
@@ -48,12 +48,11 @@ export function TaskDetail() {
 
   // When viewing a task from a different project, show that project's orchestrator chat
   const isCrossProject = task !== null && current !== null && task.projectId !== current.name
-  const TERMINATED = useMemo(() => new Set(["done", "completed", "cancelled"]), [])
   const orchestratorTask = useMemo(() => {
-    if (!isCrossProject) return null
-    const orchTasks = tasks.filter((t) => t.type === "orchestrator")
-    return orchTasks.find((t) => !TERMINATED.has(t.status)) ?? null
-  }, [isCrossProject, tasks, TERMINATED])
+    if (!isCrossProject || !task) return null
+    const orchTasks = tasks.filter((t) => t.type === "orchestrator" && t.projectId === task.projectId)
+    return orchTasks.find((t) => !TERMINAL_STATUSES.has(t.status)) ?? null
+  }, [isCrossProject, task, tasks])
 
   const chatTaskId = (isCrossProject && orchestratorTask) ? orchestratorTask.id : (id ?? "")
   const session = useSession(chatTaskId)

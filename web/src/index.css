@@ -78,6 +78,7 @@
 
 /* Dark mode overrides */
 .dark {
+  color-scheme: dark;
   --color-surface: #0a0a0a;
   --color-surface-secondary: #171717;
   --color-surface-dark: #262626;

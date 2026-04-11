@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from "react"
+import { TERMINAL_STATUSES } from "@tangerine/shared"
 import type { Task } from "@tangerine/shared"
 import { executeAction } from "../lib/actions"
 import { useToast } from "../context/ToastContext"
-
-const TERMINATED_STATUSES = new Set(["done", "completed", "failed", "cancelled"])
 
 export function TaskOverflowMenu({
   task,
@@ -20,7 +19,7 @@ export function TaskOverflowMenu({
 
   const isRunning = task.status === "running"
   const isRetryable = task.status === "failed" || task.status === "cancelled"
-  const isTerminated = TERMINATED_STATUSES.has(task.status)
+  const isTerminated = TERMINAL_STATUSES.has(task.status)
   const isDeletable = isTerminated
 
   const hasActions = isRunning || isRetryable || isDeletable

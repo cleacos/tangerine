@@ -1,5 +1,4 @@
 import { Link, useLocation, useSearchParams } from "react-router-dom"
-import { ProjectSwitcher } from "./ProjectSwitcher"
 import { useTheme } from "../hooks/useTheme"
 
 interface TopbarProps {
@@ -71,10 +70,6 @@ export function Topbar({ sidebarOpen, onToggleSidebar }: TopbarProps) {
           </div>
           <span className="text-sub font-bold text-fg">Tangerine</span>
         </Link>
-
-        <div className="h-5 w-px bg-edge" />
-
-        <ProjectSwitcher variant="desktop" />
       </div>
 
       {/* Center spacer */}

@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
+import { TERMINAL_STATUSES } from "@tangerine/shared"
 import type { PromptImage, PredefinedPrompt, TaskStatus, ProviderType } from "@tangerine/shared"
 import type { ChatMessage as ChatMessageType } from "../hooks/useSession"
 import { ChatMessage } from "./ChatMessage"
 import { ChatInput } from "./ChatInput"
 import { useProjectNav } from "../hooks/useProjectNav"
 import { getStatusConfig } from "../lib/status"
-
-const TERMINATED_STATUSES: TaskStatus[] = ["done", "failed", "cancelled"]
 
 interface ChatPanelProps {
   messages: ChatMessageType[]
@@ -58,7 +57,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const { navigate } = useProjectNav()
-  const isTerminated = taskStatus ? TERMINATED_STATUSES.includes(taskStatus) : false
+  const isTerminated = taskStatus ? TERMINAL_STATUSES.has(taskStatus) : false
   const [showThinking, setShowThinking] = useState(() => {
     try { return localStorage.getItem("showThinking") === "true" } catch { return false /* storage unavailable */ }
   })

@@ -5,19 +5,19 @@ import { CronForm, CronRow } from "../components/CronList"
 import { listCrons, deleteCron, updateCron } from "../lib/api"
 
 export function CronsPage() {
-  const { current, modelsByProvider } = useProject()
+  const { projects, modelsByProvider } = useProject()
   const [crons, setCrons] = useState<Cron[]>([])
   const [loading, setLoading] = useState(true)
+  const activeProjects = projects.filter((p) => !p.archived)
 
   const fetchCrons = useCallback(async () => {
-    if (!current) return
     try {
-      const data = await listCrons(current.name)
+      const data = await listCrons()
       setCrons(data)
     } finally {
       setLoading(false)
     }
-  }, [current])
+  }, [])
 
   useEffect(() => {
     fetchCrons()
@@ -54,9 +54,9 @@ export function CronsPage() {
 
         <div className="flex flex-col gap-6">
           {/* Create form */}
-          {current && (
+          {activeProjects.length > 0 && (
             <CronForm
-              projectId={current.name}
+              projects={activeProjects}
               onCreated={fetchCrons}
               modelsByProvider={modelsByProvider}
             />
