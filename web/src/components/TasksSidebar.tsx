@@ -145,7 +145,7 @@ function ProjectGroupHeader({
     </>
   )
 
-  if (group.orchestrator) {
+  if (group.orchestrator && !TERMINAL_STATUSES.has(group.orchestrator.status)) {
     return (
       <Link
         to={`/tasks/${group.orchestrator.id}${projectQs}`}
