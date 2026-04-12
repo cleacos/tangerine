@@ -579,6 +579,7 @@ export function TaskDetail() {
                 onResolve={canResolve ? handleResolve : undefined}
                 canContinue={canContinue}
                 taskBranch={chatTask.status === "cancelled" ? (chatTask.branch ?? undefined) : undefined}
+                taskProjectId={chatTask.projectId}
                 autoFocusKey={chatTaskId}
               />
             </div>

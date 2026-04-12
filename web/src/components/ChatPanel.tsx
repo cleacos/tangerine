@@ -30,6 +30,7 @@ interface ChatPanelProps {
   onResolve?: () => Promise<void>
   canContinue?: boolean
   taskBranch?: string
+  taskProjectId?: string
   autoFocusKey?: string
 }
 
@@ -54,6 +55,7 @@ export function ChatPanel({
   onResolve,
   canContinue,
   taskBranch,
+  taskProjectId,
   autoFocusKey,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -243,6 +245,7 @@ export function ChatPanel({
             if (refTaskId) params.set("ref", refTaskId)
             if (refTitle) params.set("refTitle", refTitle)
             if (taskBranch) params.set("branch", taskBranch)
+            if (taskProjectId) params.set("refProject", taskProjectId)
             params.set("focus", "1")
             navigate(`/?${params}`)
           } : undefined}

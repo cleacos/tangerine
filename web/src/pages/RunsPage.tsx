@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef } from "react"
-import { useOutletContext, useSearchParams } from "react-router-dom"
+import { useOutletContext, useSearchParams, useNavigate } from "react-router-dom"
 import { useProject } from "../context/ProjectContext"
-import { useProjectNav } from "../hooks/useProjectNav"
 import { NewAgentForm } from "../components/NewAgentForm"
 import { createTask } from "../lib/api"
 import type { SidebarContext } from "../components/Layout"
 import { useToast } from "../context/ToastContext"
 
 export function RunsPage() {
-  const { navigate } = useProjectNav()
+  const navigate = useNavigate()
   const { current } = useProject()
   const { showToast } = useToast()
   const { tasksLoading } = useOutletContext<SidebarContext>()
@@ -16,6 +15,7 @@ export function RunsPage() {
   const refTaskId = searchParams.get("ref") ?? undefined
   const refTaskTitle = searchParams.get("refTitle") ?? undefined
   const refBranch = searchParams.get("branch") ?? undefined
+  const refProjectId = searchParams.get("refProject") ?? undefined
   const shouldFocus = searchParams.get("focus") === "1"
   const formRef = useRef<HTMLDivElement>(null)
   const scrolledForRef = useRef<string | undefined>(undefined)
@@ -32,14 +32,14 @@ export function RunsPage() {
   }, [refTaskId, tasksLoading])
 
   const handleSubmit = useCallback(async (data: { projectId: string; title: string; description?: string; branch?: string; provider?: string; model?: string; reasoningEffort?: string; parentTaskId?: string; type?: string; images?: import("@tangerine/shared").PromptImage[] }) => {
-    if (!current) return
     try {
       const task = await createTask(data)
-      navigate(`/tasks/${task.id}`)
+      // Navigate with the task's own projectId so cross-project submits open correctly.
+      navigate(`/tasks/${task.id}?project=${encodeURIComponent(task.projectId)}`)
     } catch {
       showToast("Failed to create task")
     }
-  }, [current, navigate, showToast])
+  }, [navigate, showToast])
 
   if (current?.archived) {
     return (
@@ -58,7 +58,7 @@ export function RunsPage() {
   return (
     <div className="flex flex-col md:h-full">
       <div ref={formRef} id="new-agent-form" className="min-h-0 flex-1">
-        <NewAgentForm onSubmit={handleSubmit} refTaskId={refTaskId} refTaskTitle={refTaskTitle} refBranch={refBranch} autoFocus={shouldFocus} />
+        <NewAgentForm onSubmit={handleSubmit} refTaskId={refTaskId} refTaskTitle={refTaskTitle} refBranch={refBranch} refProjectId={refProjectId} autoFocus={shouldFocus} />
       </div>
     </div>
   )
