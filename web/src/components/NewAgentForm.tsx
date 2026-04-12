@@ -360,9 +360,7 @@ export function NewAgentForm({ onSubmit, refTaskId, refTaskTitle, refBranch, ref
                     <SelectContent side="top" align="start" alignItemWithTrigger={false} className="min-w-[160px]">
                       <SelectGroup>
                         {activeProjects.map((p) => (
-                          <SelectItem key={p.name} value={p.name}>
-                            {p.name}
-                          </SelectItem>
+                          <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
                         ))}
                       </SelectGroup>
                     </SelectContent>
