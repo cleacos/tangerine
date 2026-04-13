@@ -4,8 +4,9 @@ Local background coding agent platform. Tangerine runs as a local Bun server, sp
 
 ## Current Architecture
 
-- Single-machine runtime: no per-project VMs, SSH tunnels, or image builds in the active codepath
-- Multi-provider agents: OpenCode, Claude Code, and Codex
+- Single-machine runtime, use it on your host machine or inside a VM.
+- No auth, yet, so don't put it on a VPS, for now, okay?
+- Multi-provider agents: Pi, OpenCode, Claude Code, and Codex
 - Git worktrees per task under a shared workspace
 - Hono API server with REST + WebSocket endpoints
 - Vite + React dashboard served from `web/dist`
@@ -32,7 +33,7 @@ specs/             # design and implementation docs
 
 ## Key Features
 
-- Manual, GitHub, and cross-project task creation
+- Manual and cross-project task creation
 - Task types: `worker`, `orchestrator`, `reviewer`
 - Task capabilities derived from type, not title
 - On-demand orchestrator startup
@@ -41,12 +42,15 @@ specs/             # design and implementation docs
 - GitHub PR reference resolution from branch input like `#123` or full PR URLs
 - Self-update flow for project repos via `postUpdateCommand`
 - SSH editor deep-links to open task worktrees in VS Code, Cursor, or Zed (requires `sshHost`/`editor` in config and a matching `Host` entry in `~/.ssh/config` on the host machine)
+- Cron scheduling: create recurring agent tasks on a cron schedule via UI or API
+- GitHub fork sync: sync forked repos to upstream before running tasks
+- Watchdog: detects and restarts agents stuck on hung tools
+- Runtime system-tool detection: UI features gate on available tools (e.g. `dtach`, `gh`)
 
 ## Getting started
 
 Install the package:
 ```bash
- # Not yet published — my npmjs.com account is blocked. Use the development setup below.
 npm i -g @dinhtungdu/tangerine
 ```
 
@@ -79,8 +83,11 @@ bun run dev:web
 
 ## CLI
 
-- `tangerine start`
-- `tangerine install`
+- `tangerine start` — start the server as a background daemon
+- `tangerine stop` — stop the running daemon
+- `tangerine status` — show daemon status
+- `tangerine logs` — tail the server log file
+- `tangerine install` — install agent skills
 - `tangerine project add|list|show|remove`
 - `tangerine task create`
 - `tangerine config set|get|unset|list`
