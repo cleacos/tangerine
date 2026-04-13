@@ -71,7 +71,17 @@ export function createPiEventMapper(): (data: Record<string, unknown>) => AgentE
         return [{ kind: "status", status: "working" }]
 
       case "agent_end":
+        // Usage is emitted per-turn from turn_end — don't also sum
+        // agent_end.messages or the last event will double-count.
         return [{ kind: "status", status: "idle" }]
+
+      case "turn_end": {
+        // turn_end.message is a single AgentMessage
+        const msg = data.message as Record<string, unknown> | undefined
+        if (!msg) return []
+        const usage = extractPiMessageUsage(msg)
+        return usage ? [usage] : []
+      }
 
       case "message_update": {
         // data.assistantMessageEvent contains the streaming delta
@@ -171,6 +181,20 @@ export function createPiEventMapper(): (data: Record<string, unknown>) => AgentE
   }
 }
 
+// Pi's Usage type: { input, output, cacheRead, cacheWrite, totalTokens, cost }
+// Lives on AssistantMessage.usage (not at event top level).
+export function extractPiMessageUsage(msg: Record<string, unknown>): { kind: "usage"; inputTokens: number; outputTokens: number } | null {
+  const usage = msg.usage as Record<string, unknown> | undefined
+  if (!usage) return null
+  const input = typeof usage.input === "number" ? usage.input : 0
+  const cacheRead = typeof usage.cacheRead === "number" ? usage.cacheRead : 0
+  const cacheWrite = typeof usage.cacheWrite === "number" ? usage.cacheWrite : 0
+  const inputTokens = input + cacheRead + cacheWrite
+  const outputTokens = typeof usage.output === "number" ? usage.output : 0
+  if (inputTokens === 0 && outputTokens === 0) return null
+  return { kind: "usage", inputTokens, outputTokens }
+}
+
 function truncate(s: string, maxLen: number): string {
   return s.length <= maxLen ? s : s.slice(0, maxLen) + "\u2026"
 }
@@ -254,7 +278,12 @@ export function createPiProvider(): AgentFactory {
           // Skills discovered from get_state response
           let discoveredSkills: string[] = []
 
+          let latestUsage: { inputTokens: number; outputTokens: number } | null = null
+
           const emit = (event: AgentEvent) => {
+            if (event.kind === "usage") {
+              latestUsage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens }
+            }
             for (const cb of subscribers) cb(event)
           }
 
@@ -506,6 +535,10 @@ export function createPiProvider(): AgentFactory {
               } catch {
                 return false
               }
+            },
+
+            getUsage() {
+              return latestUsage
             },
 
             getSkills() {

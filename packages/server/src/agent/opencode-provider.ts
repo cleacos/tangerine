@@ -372,6 +372,18 @@ export function createOpenCodeEventProcessor(sessionId: string, callbacks: OpenC
 // ---------------------------------------------------------------------------
 // Adapter: `--format json` NDJSON events → internal event format
 // ---------------------------------------------------------------------------
+export function extractStepFinishUsage(raw: Record<string, unknown>): { inputTokens: number; outputTokens: number } | null {
+  if (raw.type !== "step_finish") return null
+  const usage = raw.usage as Record<string, unknown> | undefined
+  if (!usage) return null
+  const inputTokens = typeof usage.inputTokens === "number" ? usage.inputTokens
+    : typeof usage.input_tokens === "number" ? usage.input_tokens : 0
+  const outputTokens = typeof usage.outputTokens === "number" ? usage.outputTokens
+    : typeof usage.output_tokens === "number" ? usage.output_tokens : 0
+  if (inputTokens === 0 && outputTokens === 0) return null
+  return { inputTokens, outputTokens }
+}
+
 // `opencode run --format json` outputs simplified event types (text, tool_use,
 // step_start, step_finish, reasoning, error) while the event processor expects
 // the internal SSE format (message.part.updated, session.status, etc.).
@@ -454,7 +466,10 @@ export function createOpenCodeProvider(): AgentFactory {
           // Track last spawned PID so cleanup can kill orphaned processes after server restart
           let lastPid: number | null = null
 
+          let latestUsage: { inputTokens: number; outputTokens: number } | null = null
+
           const emit = (event: AgentEvent) => {
+            if (event.kind === "usage") latestUsage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens }
             for (const cb of subscribers) cb(event)
           }
 
@@ -555,6 +570,12 @@ export function createOpenCodeProvider(): AgentFactory {
                     }
                   })
 
+                  // Accumulate token usage across steps within this turn.
+                  // Each step_finish reports that step's tokens — we sum them
+                  // and emit a single usage event when the process ends.
+                  let turnInputTokens = 0
+                  let turnOutputTokens = 0
+
                   // Parse NDJSON from stdout — adapt --format json events to
                   // internal format before feeding to the event processor
                   const parser = parseNdjsonStream(
@@ -567,6 +588,12 @@ export function createOpenCodeProvider(): AgentFactory {
                         if (!sessionId && typeof raw.sessionID === "string") {
                           sessionId = raw.sessionID
                           taskLog.info("Captured OpenCode session ID", { sessionId })
+                        }
+
+                        const stepUsage = extractStepFinishUsage(raw)
+                        if (stepUsage) {
+                          turnInputTokens += stepUsage.inputTokens
+                          turnOutputTokens += stepUsage.outputTokens
                         }
 
                         const processor = getOrCreateProcessor(sessionId ?? ctx.taskId)
@@ -588,6 +615,12 @@ export function createOpenCodeProvider(): AgentFactory {
                         currentParser = null
                         if (!shutdownCalled) {
                           taskLog.debug("opencode run stdout ended")
+
+                          // Emit accumulated turn usage before idle
+                          if (turnInputTokens > 0 || turnOutputTokens > 0) {
+                            emit({ kind: "usage", inputTokens: turnInputTokens, outputTokens: turnOutputTokens })
+                          }
+
                           // Feed synthetic idle to processor so it promotes
                           // narration → assistant message before emitting idle
                           const processor = getOrCreateProcessor(sessionId ?? ctx.taskId)
@@ -708,6 +741,10 @@ export function createOpenCodeProvider(): AgentFactory {
             getSkills() {
               return scanClaudeSkills()
             },
+
+            getUsage() {
+              return latestUsage
+            },
           }
 
           // Attach metadata so callers can read session info
@@ -767,7 +804,7 @@ interface ProviderEntry {
   id: string
   name: string
   env?: string[]
-  models: Record<string, { id: string; name?: string }>
+  models: Record<string, { id: string; name?: string; limit?: { context?: number; output?: number } }>
 }
 
 interface ConfigProviderEntry {
@@ -789,13 +826,14 @@ function readJsonFile<T>(path: string): T | null {
 function buildModelInfos(
   providerId: string,
   providerName: string,
-  models: Record<string, { name?: string; [key: string]: unknown }>,
+  models: Record<string, { name?: string; limit?: { context?: number }; [key: string]: unknown }>,
 ): ModelInfo[] {
   return Object.entries(models).map(([modelId, model]) => ({
     id: `${providerId}/${modelId}`,
     name: model.name ?? modelId,
     provider: providerId,
     providerName,
+    ...(model.limit?.context ? { contextWindow: model.limit.context } : {}),
   }))
 }
 

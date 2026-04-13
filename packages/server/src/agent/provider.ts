@@ -13,6 +13,8 @@ export interface ModelInfo {
   name: string
   provider: string
   providerName: string
+  /** Maximum context window in tokens, if known */
+  contextWindow?: number
 }
 
 /** Normalized events emitted by all agent providers */
@@ -24,6 +26,8 @@ export type AgentEvent =
   | { kind: "tool.start"; toolName: string; toolInput?: string }
   | { kind: "tool.end"; toolName: string; toolResult?: string }
   | { kind: "thinking"; content: string }
+  /** Token usage for one completed turn — providers emit this when they have token data */
+  | { kind: "usage"; inputTokens: number; outputTokens: number }
 
 /** Runtime config that can be changed mid-session */
 export interface AgentConfig {
@@ -84,6 +88,12 @@ export interface AgentHandle {
    * OpenCode/Codex: scanned from ~/.claude/skills or ~/.codex/skills.
    */
   getSkills?(): string[]
+  /**
+   * Return the most recently observed token usage for this session.
+   * Updated each time the provider emits a `usage` event.
+   * Returns null if no usage has been observed yet.
+   */
+  getUsage?(): { inputTokens: number; outputTokens: number } | null
 }
 
 /** Context passed to AgentFactory.start() to bootstrap an agent session */

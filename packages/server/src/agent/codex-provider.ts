@@ -84,13 +84,27 @@ function rpcNotification(method: string, params?: Record<string, unknown>): stri
 //   userMessage        (ignored)
 // ---------------------------------------------------------------------------
 
-function mapNotification(method: string, params: Record<string, unknown>): AgentEvent[] {
+export function mapNotification(method: string, params: Record<string, unknown>): AgentEvent[] {
   switch (method) {
     case "turn/started":
       return [{ kind: "status", status: "working" }]
 
-    case "turn/completed":
-      return [{ kind: "status", status: "idle" }]
+    case "turn/completed": {
+      const events: AgentEvent[] = [{ kind: "status", status: "idle" }]
+      // Extract token usage from turn object if available
+      const turn = params.turn as Record<string, unknown> | undefined
+      const usage = (turn?.usage ?? turn?.tokenUsage) as Record<string, unknown> | undefined
+      if (usage) {
+        const inputTokens = typeof usage.prompt_tokens === "number" ? usage.prompt_tokens
+          : typeof usage.input_tokens === "number" ? usage.input_tokens : 0
+        const outputTokens = typeof usage.completion_tokens === "number" ? usage.completion_tokens
+          : typeof usage.output_tokens === "number" ? usage.output_tokens : 0
+        if (inputTokens > 0 || outputTokens > 0) {
+          events.push({ kind: "usage", inputTokens, outputTokens })
+        }
+      }
+      return events
+    }
 
     case "item/started":
     case "item/completed": {
@@ -319,6 +333,29 @@ export function buildCodexTurnStartParams(
 
 const CODEX_MODELS_CACHE = join(homedir(), ".codex", "models_cache.json")
 
+// Known context windows for well-known OpenAI models (slug prefix → tokens).
+// Codex's models cache does not include context window info.
+// Ordered longest-prefix-first so "o1-mini" matches before "o1".
+const OPENAI_CONTEXT_WINDOWS: [string, number][] = [
+  ["o4-mini", 200_000],
+  ["o3", 200_000],
+  ["o1-mini", 128_000],
+  ["o1-preview", 128_000],
+  ["o1", 200_000],
+  ["gpt-4o-mini", 128_000],
+  ["gpt-4o", 128_000],
+  ["gpt-4-turbo", 128_000],
+  ["gpt-4", 8_192],
+  ["gpt-3.5-turbo", 16_385],
+]
+
+function openaiContextWindow(slug: string): number | undefined {
+  for (const [prefix, size] of OPENAI_CONTEXT_WINDOWS) {
+    if (slug === prefix || slug.startsWith(`${prefix}-`)) return size
+  }
+  return undefined
+}
+
 /**
  * Discover available Codex models by reading ~/.codex/models_cache.json.
  * Only includes models with visibility "list" (publicly available).
@@ -337,6 +374,7 @@ export function discoverModels(): ModelInfo[] {
         name: m.display_name ?? m.slug,
         provider: "openai",
         providerName: "OpenAI",
+        ...(openaiContextWindow(m.slug) ? { contextWindow: openaiContextWindow(m.slug) } : {}),
       }))
   } catch {
     return []
@@ -364,8 +402,10 @@ export function createCodexProvider(): AgentFactory {
           let activeTurnId: string | null = null
           const activeEffort: string | undefined = ctx.reasoningEffort
           let activeSystemPrompt = ctx.systemPrompt
+          let latestUsage: { inputTokens: number; outputTokens: number } | null = null
 
           const emit = (event: AgentEvent) => {
+            if (event.kind === "usage") latestUsage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens }
             for (const cb of subscribers) cb(event)
           }
 
@@ -645,6 +685,10 @@ export function createCodexProvider(): AgentFactory {
 
             getSkills() {
               return scanCodexSkills()
+            },
+
+            getUsage() {
+              return latestUsage
             },
           }
 

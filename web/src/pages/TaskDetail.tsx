@@ -16,7 +16,7 @@ import { ActivityList } from "../components/ActivityList"
 import { ChangesPanel as DiffSidebar, type DiffComment } from "../components/ChangesPanel"
 import { ResizeHandle, PaneToggle } from "../components/PaneControls"
 import { TerminalPane } from "../components/TerminalPane"
-import { formatPrNumber, formatTaskTitle } from "../lib/format"
+import { formatPrNumber, formatTaskTitle, formatTokens } from "../lib/format"
 import { copyToClipboard } from "../lib/clipboard"
 import { TaskOverflowMenu } from "../components/TaskListItem"
 import { useTaskActions } from "../hooks/useTaskActions"
@@ -43,7 +43,7 @@ export function TaskDetail() {
   })
   const [mobilePane, setMobilePane] = useState<PaneId>("chat")
 
-  const { current, modelsByProvider, systemCapabilities, sshHost, sshUser, editor } = useProject()
+  const { current, modelsByProvider, contextWindowByModel, systemCapabilities, sshHost, sshUser, editor } = useProject()
   const { showToast } = useToast()
 
   // When viewing a task from a different project, show that project's orchestrator chat
@@ -55,7 +55,8 @@ export function TaskDetail() {
   }, [isCrossProject, task, tasks])
 
   const chatTaskId = (isCrossProject && orchestratorTask) ? orchestratorTask.id : (id ?? "")
-  const session = useSession(chatTaskId)
+  const sessionTask = (isCrossProject && orchestratorTask) ? orchestratorTask : task
+  const session = useSession(chatTaskId, sessionTask ? { inputTokens: sessionTask.inputTokens, outputTokens: sessionTask.outputTokens } : undefined)
   const { files: diffFiles } = useDiffFiles(id ?? "")
   const diffCommentsKey = `diff-comments:${id}`
   const [diffComments, setDiffComments] = useState<DiffComment[]>([])
@@ -386,6 +387,17 @@ export function TaskDetail() {
   const { color: statusColor, label: statusLabel } = getStatusConfig(task.status)
   const isTerminated = task.status === "done" || task.status === "failed" || task.status === "cancelled"
 
+  const tokenModel = sessionTask?.model ?? task.model
+  const ctxMax = tokenModel ? contextWindowByModel[tokenModel] : undefined
+  const tokenLabel = session.inputTokens > 0
+    ? ctxMax
+      ? `${formatTokens(session.inputTokens)} / ${formatTokens(ctxMax)}`
+      : `${formatTokens(session.inputTokens)} ctx`
+    : null
+  const tokenTitle = session.inputTokens > 0
+    ? `Context: ${session.inputTokens.toLocaleString()} input tokens, ${session.outputTokens.toLocaleString()} output tokens${ctxMax ? ` / ${ctxMax.toLocaleString()} max` : ""}`
+    : undefined
+
   // Desktop: multi-pane from visiblePanes set. Mobile: single pane from mobilePane.
   // Both states are tracked; CSS breakpoints control which layout renders.
   const dtachAvailable = systemCapabilities?.dtach.available !== false
@@ -461,6 +473,14 @@ export function TaskDetail() {
               >
                 {formatPrNumber(task.prUrl)}
               </a>
+            )}
+            {tokenLabel && (
+              <span
+                className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-mono text-2xs text-muted-foreground"
+                title={tokenTitle}
+              >
+                {tokenLabel}
+              </span>
             )}
             <span
               className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-medium"
