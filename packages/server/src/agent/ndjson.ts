@@ -288,6 +288,21 @@ export function createClaudeCodeMapper(): (raw: Record<string, unknown>) => Agen
           return [{ kind: "message.streaming", content: delta.text }]
         }
       }
+
+      // message_start carries per-turn context window usage
+      if (event.type === "message_start") {
+        const message = event.message as Record<string, unknown> | undefined
+        const usage = message?.usage as Record<string, unknown> | undefined
+        if (usage) {
+          const contextTokens = (typeof usage.input_tokens === "number" ? usage.input_tokens : 0)
+            + (typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : 0)
+            + (typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : 0)
+          if (contextTokens > 0) {
+            return [{ kind: "usage", contextTokens }]
+          }
+        }
+      }
+
       return []
     }
 

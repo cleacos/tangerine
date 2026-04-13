@@ -182,7 +182,7 @@ describe("mapClaudeCodeEvent", () => {
       expect(events).toEqual([])
     })
 
-    test("emits error for error results", () => {
+    test("emits error for error results (result event)", () => {
       const events = mapClaudeCodeEvent({
         type: "result",
         subtype: "error",
@@ -193,6 +193,58 @@ describe("mapClaudeCodeEvent", () => {
         kind: "error",
         message: "Something went wrong",
       }])
+    })
+  })
+
+  describe("stream_event usage extraction", () => {
+    test("emits contextTokens from message_start", () => {
+      const mapper = createClaudeCodeMapper()
+      const events = mapper({
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: {
+            usage: {
+              input_tokens: 50000,
+              cache_read_input_tokens: 10000,
+              cache_creation_input_tokens: 5000,
+            },
+          },
+        },
+      })
+
+      expect(events).toEqual([{
+        kind: "usage",
+        contextTokens: 65000,
+      }])
+      expect(events[0]).not.toHaveProperty("inputTokens")
+      expect(events[0]).not.toHaveProperty("outputTokens")
+    })
+
+    test("skips usage from message_start when all tokens are zero", () => {
+      const mapper = createClaudeCodeMapper()
+      const events = mapper({
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: { usage: { input_tokens: 0 } },
+        },
+      })
+
+      expect(events).toEqual([])
+    })
+
+    test("skips usage from message_start without usage field", () => {
+      const mapper = createClaudeCodeMapper()
+      const events = mapper({
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: {},
+        },
+      })
+
+      expect(events).toEqual([])
     })
   })
 })
