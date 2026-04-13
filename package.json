@@ -1,5 +1,7 @@
 {
-  "name": "tangerine",
+  "name": "@dinhtungdu/tangerine",
+  "version": "0.0.1",
+  "description": "Local background coding agent platform with multi-provider support and web dashboard",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.0.3",
@@ -10,8 +12,14 @@
   "bin": {
     "tangerine": "bin/tangerine"
   },
+  "files": [
+    "bin/",
+    "packages/",
+    "web/dist/",
+    "skills/",
+    ".agents/skills/"
+  ],
   "license": "MIT",
-  "private": true,
   "scripts": {
     "dev": "bun run --filter '*' dev",
     "dev:api": "bun run --filter tangerine-server dev",
@@ -28,6 +36,11 @@
     "web"
   ],
   "dependencies": {
-    "cron-parser": "^5.5.0"
+    "@opencode-ai/sdk": "^1.3.2",
+    "bun-pty": "^0.4.8",
+    "cron-parser": "^5.5.0",
+    "effect": "^3.12",
+    "hono": "^4.7",
+    "zod": "^3.24"
   }
 }
