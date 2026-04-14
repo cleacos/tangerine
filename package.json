@@ -15,6 +15,7 @@
   "files": [
     "bin/",
     "packages/",
+    "scripts/",
     "web/dist/",
     "skills/",
     ".agents/skills/"
@@ -29,7 +30,8 @@
     "lint": "eslint 'packages/*/src/**/*.ts' 'web/src/**/*.{ts,tsx}'",
     "check": "bun run --filter '*' check && bun run lint",
     "test": "bun run --filter '*' test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "node scripts/postinstall.js"
   },
   "workspaces": [
     "packages/*",
