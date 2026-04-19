@@ -11,7 +11,7 @@ type TerminalPaneProps =
   | { taskId: string; wsUrl?: never }
   | { taskId?: never; wsUrl: string }
 
-type ConnState = "connecting" | "connected" | "reconnecting" | "error"
+type ConnState = "connecting" | "connected" | "reconnecting" | "error" | "unavailable"
 
 export function TerminalPane(props: TerminalPaneProps) {
   const wsPath = props.wsUrl ?? `/api/tasks/${props.taskId}/terminal`
@@ -26,6 +26,7 @@ export function TerminalPane(props: TerminalPaneProps) {
   const disposedRef = useRef(false)
   const everConnectedRef = useRef(false)
   const hadErrorRef = useRef(false)
+  const permanentErrorRef = useRef(false)
   const [connState, setConnState] = useState<ConnState>("connecting")
 
   const sendInput = useCallback((data: string) => {
@@ -38,6 +39,7 @@ export function TerminalPane(props: TerminalPaneProps) {
   const connect = useCallback(() => {
     const term = termRef.current
     if (!term || disposedRef.current) return
+    if (permanentErrorRef.current) return
     hadErrorRef.current = false
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
@@ -115,10 +117,15 @@ export function TerminalPane(props: TerminalPaneProps) {
         } else if (msg.type === "exit") {
           term.writeln(`\r\n[Process exited with code ${msg.code}]`)
         } else if (msg.type === "error") {
-          hadErrorRef.current = true
-          if (msg.message === "Unauthorized") emitAuthFailure()
-          setConnState("error")
-          term.writeln(`\r\n[Error: ${msg.message}]`)
+          if (msg.message?.includes("no worktree")) {
+            permanentErrorRef.current = true
+            setConnState("unavailable")
+          } else {
+            hadErrorRef.current = true
+            if (msg.message === "Unauthorized") emitAuthFailure()
+            setConnState("error")
+            term.writeln(`\r\n[Error: ${msg.message}]`)
+          }
         }
       } catch {
         // Ignore unparseable
@@ -132,6 +139,7 @@ export function TerminalPane(props: TerminalPaneProps) {
       if (wsRef.current !== ws) return
       wsRef.current = null
       if (disposedRef.current) return
+      if (permanentErrorRef.current) return
       const delay = backoffRef.current
       backoffRef.current = Math.min(delay * 2, 5000)
       if (hadErrorRef.current) {
@@ -280,6 +288,7 @@ export function TerminalPane(props: TerminalPaneProps) {
       setConnState("connecting")
       everConnectedRef.current = false
       hadErrorRef.current = false
+      permanentErrorRef.current = false
       term.dispose()
       termRef.current = null
       fitRef.current = null
@@ -299,7 +308,13 @@ export function TerminalPane(props: TerminalPaneProps) {
         {connState !== "connected" && (
           <div className="absolute inset-0 flex items-center justify-center bg-[#1a1a1a]">
             <span className="text-sm text-muted-foreground">
-              {connState === "reconnecting" ? "Reconnecting..." : connState === "error" ? "Connection error" : "Connecting..."}
+              {connState === "unavailable"
+                ? "Terminal not available"
+                : connState === "reconnecting"
+                  ? "Reconnecting..."
+                  : connState === "error"
+                    ? "Connection error"
+                    : "Connecting..."}
             </span>
           </div>
         )}

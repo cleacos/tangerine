@@ -249,7 +249,19 @@ export function terminalWsRoutes(deps: AppDeps, upgradeWebSocket: UpgradeWebSock
         Effect.runPromise(
           Effect.gen(function* () {
             const task = yield* getTask(deps.db, taskId)
-            if (!task?.worktree_path) throw new Error("Task has no worktree")
+            if (!task?.worktree_path) {
+              // Terminal tasks (done/failed/cancelled) have their worktree cleaned up
+              // permanently — tell the client to stop retrying. Non-terminal tasks
+              // (created/provisioning/running) may still be acquiring their worktree,
+              // so close silently and let the client retry on its normal backoff.
+              const isTerminal = task?.status === "done" || task?.status === "failed" || task?.status === "cancelled"
+              if (isTerminal) {
+                throw new Error("Task has no worktree")
+              } else {
+                ws.close(1011, "Worktree not yet available")
+                return
+              }
+            }
 
             const session = getOrCreateSession(taskId, task.worktree_path)
             client = addTerminalClient(taskId, ws)
@@ -273,9 +285,16 @@ export function terminalWsRoutes(deps: AppDeps, upgradeWebSocket: UpgradeWebSock
             }
           }),
         ).catch((err) => {
-          log.error("Terminal session failed", { taskId, error: String(err) })
+          // "no worktree" is an expected condition (e.g. completed tasks) — log
+          // at debug so it doesn't flood the error log on client reconnect loops.
+          const msg = String(err)
+          if (msg.includes("no worktree")) {
+            log.debug("Terminal unavailable: task has no worktree", { taskId })
+          } else {
+            log.error("Terminal session failed", { taskId, error: msg })
+          }
           try {
-            ws.send(JSON.stringify({ type: "error", message: String(err) }))
+            ws.send(JSON.stringify({ type: "error", message: msg }))
             ws.close(1011, "Terminal setup failed")
           } catch { /* client already gone */ }
         })
