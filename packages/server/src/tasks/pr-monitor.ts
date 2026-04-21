@@ -16,7 +16,7 @@ import { emitStatusChange, clearAgentWorkingState } from "./events"
 import { clearQueue } from "../agent/prompt-queue"
 import { clearTaskState } from "./task-state"
 import { taskHasCapability } from "../api/helpers"
-import { ghSpawnEnv, extractPrUrl, extractGithubSlug } from "../gh"
+import { ghSpawnEnv, ghSpawnEnvForHost, extractPrUrl, extractGithubSlug, extractGithubHost } from "../gh"
 import { AUTH_CURL_FLAG } from "./api-auth"
 
 export { extractPrUrl, extractGithubSlug }
@@ -121,10 +121,10 @@ export function getPrLookupTargets(repoSlug: string, repoView?: RepoViewResult |
     : [{ repoSlug }]
 }
 
-async function getRepoView(repoSlug: string): Promise<RepoViewResult | null> {
+async function getRepoView(repoSlug: string, ghHost: string): Promise<RepoViewResult | null> {
   const proc = Bun.spawn(
     ["gh", "repo", "view", repoSlug, "--json", "nameWithOwner,isFork,parent"],
-    ghSpawnEnv(),
+    ghSpawnEnvForHost(ghHost),
   )
   const [text, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -144,13 +144,13 @@ async function getRepoView(repoSlug: string): Promise<RepoViewResult | null> {
   }
 }
 
-async function listPrUrl(repoSlug: string, branch: string, expectedHeadOwner?: string): Promise<string | null> {
+async function listPrUrl(repoSlug: string, branch: string, ghHost: string, expectedHeadOwner?: string): Promise<string | null> {
   // Use --state open only: we must never discover a closed/merged PR for an active task.
   // Assigning a closed PR would cause Phase 2 to immediately cancel the task.
   // Phase 2 already handles state changes for PRs that were open when discovered.
   const proc = Bun.spawn(
     ["gh", "pr", "list", "--head", branch, "--repo", repoSlug, "--state", "open", "--json", "url,headRefName,headRepositoryOwner"],
-    ghSpawnEnv(),
+    ghSpawnEnvForHost(ghHost),
   )
   const [text, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -183,12 +183,13 @@ async function listPrUrl(repoSlug: string, branch: string, expectedHeadOwner?: s
 export function lookupPrByBranch(repoUrl: string, branch: string): Effect.Effect<string | null, never> {
   const repoSlug = extractGithubSlug(repoUrl)
   if (!repoSlug) return Effect.succeed(null)
+  const ghHost = extractGithubHost(repoUrl) ?? "github.com"
 
   return Effect.tryPromise({
     try: async () => {
-      const repoView = await getRepoView(repoSlug)
+      const repoView = await getRepoView(repoSlug, ghHost)
       for (const target of getPrLookupTargets(repoSlug, repoView)) {
-        const prUrl = await listPrUrl(target.repoSlug, branch, target.expectedHeadOwner)
+        const prUrl = await listPrUrl(target.repoSlug, branch, ghHost, target.expectedHeadOwner)
         if (prUrl) return prUrl
       }
       return null
@@ -214,6 +215,23 @@ export function readWorktreeBranch(worktreePath: string): Effect.Effect<string |
   }).pipe(Effect.catchAll(() => Effect.succeed(null)))
 }
 
+/** Read the remote.origin.url from a git worktree. Returns null if unavailable. */
+export function readWorktreeRemoteUrl(worktreePath: string): Effect.Effect<string | null, never> {
+  return Effect.tryPromise({
+    try: async () => {
+      const proc = Bun.spawn(["git", "-C", worktreePath, "config", "--get", "remote.origin.url"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+      const [text, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
+      if (exitCode !== 0) return null
+      const url = text.trim()
+      return url.length > 0 ? url : null
+    },
+    catch: () => null,
+  }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+}
+
 export interface PrMonitorDeps {
   db: Database
   listTasks(filter?: { status?: string }): Effect.Effect<TaskRow[], Error>
@@ -230,6 +248,8 @@ export interface PrMonitorDeps {
   lookupPrByBranch?: (repoUrl: string, branch: string) => Effect.Effect<string | null, never>
   /** Override worktree branch reader for testing. Defaults to `readWorktreeBranch` (shells out to `git`). */
   readWorktreeBranch?: (worktreePath: string) => Effect.Effect<string | null, never>
+  /** Override worktree remote URL reader for testing. Defaults to `readWorktreeRemoteUrl` (shells out to `git`). */
+  readWorktreeRemoteUrl?: (worktreePath: string) => Effect.Effect<string | null, never>
 }
 
 const TERMINATED_STATUSES = new Set(["done", "cancelled"])
@@ -271,8 +291,16 @@ export function pollPrStatuses(deps: PrMonitorDeps): Effect.Effect<void, never> 
     if (withoutPr.length > 0) {
       const lookup = deps.lookupPrByBranch ?? lookupPrByBranch
       log.debug("Discovering PRs for tasks without pr_url", { count: withoutPr.length })
+      const remoteReader = deps.readWorktreeRemoteUrl ?? readWorktreeRemoteUrl
       for (const task of withoutPr) {
-        const repoUrl = deps.getProjectRepoUrl?.(task.project_id)
+        let repoUrl = deps.getProjectRepoUrl?.(task.project_id)
+        if (!repoUrl && task.worktree_path) {
+          // Project config missing repo — fall back to git remote of the worktree
+          repoUrl = (yield* remoteReader(task.worktree_path)) ?? undefined
+          if (repoUrl) {
+            log.info("Resolved repo URL from worktree remote", { taskId: task.id, repoUrl })
+          }
+        }
         if (!repoUrl) continue
         const prUrl = yield* lookup(repoUrl, task.branch!)
         if (prUrl) {
