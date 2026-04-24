@@ -341,7 +341,9 @@ export function TaskDetail() {
     navigate(`/tasks/${newTaskId}`)
   }, [navigate])
 
-  const hasTree = checkpoints.length > 0 || !!task?.parentTaskId || childTasks.length > 0
+  // Tree pane gated on capability (workers, reviewers) + having checkpoints or family
+  const hasTreeCapability = task?.capabilities.includes("tree") ?? false
+  const hasTree = hasTreeCapability && (checkpoints.length > 0 || !!task?.parentTaskId || childTasks.length > 0)
 
   // Register task-contextual actions in the command palette
   useTaskActions(task, handleRefetch)
@@ -764,8 +766,8 @@ export function TaskDetail() {
                 autoFocusKey={chatTaskId}
                 contextTokens={session.contextTokens || undefined}
                 contextWindowMax={ctxMax}
-                checkpoints={checkpoints.length > 0 ? checkpoints : undefined}
-                onBranch={checkpoints.length > 0 ? handleBranch : undefined}
+                checkpoints={hasTreeCapability && checkpoints.length > 0 ? checkpoints : undefined}
+                onBranch={hasTreeCapability && checkpoints.length > 0 ? handleBranch : undefined}
               />
             </div>
           )}
