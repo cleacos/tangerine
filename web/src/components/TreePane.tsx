@@ -1,5 +1,5 @@
 import { memo, useState, useCallback, useRef, useEffect, useMemo } from "react"
-import type { TaskTreeNode } from "@tangerine/shared"
+import type { TaskTreeNode, Checkpoint } from "@tangerine/shared"
 import { getStatusConfig } from "../lib/status"
 import { useProjectNav } from "../hooks/useProjectNav"
 import { formatTimestamp } from "../lib/format"
@@ -8,6 +8,8 @@ interface TreePaneProps {
   taskId: string
   tree: TaskTreeNode | null
   loading: boolean
+  checkpoints?: Checkpoint[]
+  onBranch?: (checkpoint: Checkpoint) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +75,8 @@ interface TreeNodeProps {
   nodeRefs: React.MutableRefObject<Map<string, HTMLElement>>
   tree: TaskTreeNode
   search: string
+  checkpoints?: Checkpoint[]
+  onBranch?: (checkpoint: Checkpoint) => void
 }
 
 const TreeNode = memo(function TreeNode({
@@ -86,9 +90,15 @@ const TreeNode = memo(function TreeNode({
   nodeRefs,
   tree,
   search,
+  checkpoints,
+  onBranch,
 }: TreeNodeProps) {
   const { link, navigate } = useProjectNav()
   const isCurrent = node.taskId === currentTaskId
+  const checkpointMap = useMemo(
+    () => new Map(checkpoints?.map((cp) => [cp.id, cp]) ?? []),
+    [checkpoints],
+  )
   const hasBranches = node.turns.some((t) => t.branches.length > 0)
   const isRunning = node.status === "running"
   const isCollapsed = collapsed.has(node.taskId)
@@ -124,10 +134,10 @@ const TreeNode = memo(function TreeNode({
       {/* Task header row */}
       <div
         ref={setRef}
-        className={`group flex cursor-pointer items-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors hover:bg-muted ${isCurrent ? "bg-muted font-medium text-foreground" : "text-muted-foreground"} ${isFocused ? "ring-1 ring-ring" : ""} ${!taskVisible ? "opacity-40" : ""}`}
+        className={`group flex items-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors ${isCurrent ? "cursor-default bg-muted font-medium text-foreground" : "cursor-pointer touch-manipulation hover:bg-muted active:bg-muted text-muted-foreground"} ${isFocused ? "ring-1 ring-ring" : ""} ${!taskVisible ? "opacity-40" : ""}`}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={handleNodeClick}
-        onFocus={() => onFocus(taskNodeId)}
+        onClick={isCurrent ? undefined : handleNodeClick}
+        onFocus={(e) => { if (e.target === e.currentTarget) onFocus(taskNodeId) }}
         role="treeitem"
         aria-expanded={hasBranches ? !isCollapsed : undefined}
         tabIndex={isFocused ? 0 : -1}
@@ -167,15 +177,29 @@ const TreeNode = memo(function TreeNode({
           else nodeRefs.current.delete(turnNodeId)
         }
 
+        // Turns under the current task navigate to the same URL — no-op.
+        // Render as a non-interactive div; only turns under other tasks are links.
+        const TurnEl = isCurrent ? "div" : "a"
+        const turnLinkProps = isCurrent
+          ? {}
+          : {
+              href: link(`/tasks/${node.taskId}`),
+              onClick: (e: React.MouseEvent) => { e.preventDefault(); navigate(`/tasks/${node.taskId}`) },
+            }
+
+        // Find checkpoint for this turn to enable branching (O(1) via Map)
+        const checkpoint = isCurrent && onBranch
+          ? checkpointMap.get(turn.checkpointId)
+          : undefined
+
         return (
           <div key={turn.checkpointId}>
             {/* Turn row */}
-            <a
-              ref={setTurnRef}
-              href={link(`/tasks/${node.taskId}`)}
-              onClick={(e) => { e.preventDefault(); navigate(`/tasks/${node.taskId}`) }}
-              onFocus={() => onFocus(turnNodeId)}
-              className={`flex items-center gap-1.5 rounded px-2 py-1 text-2xs transition-colors hover:bg-muted/60 ${isCurrent ? "text-foreground/70" : "text-muted-foreground/60"} ${isTurnFocused ? "ring-1 ring-ring" : ""} ${!turnVisible ? "opacity-30" : ""}`}
+            <TurnEl
+              ref={setTurnRef as React.RefCallback<HTMLElement>}
+              {...turnLinkProps}
+              onFocus={(e) => { if (e.target === e.currentTarget) onFocus(turnNodeId) }}
+              className={`group/turn flex items-center gap-1.5 rounded px-2 py-1 text-2xs transition-colors ${isCurrent ? "text-foreground/70 hover:bg-muted/40" : "cursor-pointer touch-manipulation hover:bg-muted/60 active:bg-muted/60 text-muted-foreground/60"} ${isTurnFocused ? "ring-1 ring-ring" : ""} ${!turnVisible ? "opacity-30" : ""}`}
               style={{ paddingLeft: `${8 + (depth + 1) * 16}px` }}
               tabIndex={isTurnFocused ? 0 : -1}
               role="treeitem"
@@ -189,8 +213,21 @@ const TreeNode = memo(function TreeNode({
                   ? turn.lastMessage.slice(0, 60) + (turn.lastMessage.length > 60 ? "…" : "")
                   : `Turn ${turn.turnIndex + 1}`}
               </span>
-              <span className="shrink-0 text-muted-foreground/40">{formatTimestamp(turn.createdAt)}</span>
-            </a>
+              {checkpoint && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onBranch!(checkpoint) }}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-2xs text-muted-foreground md:opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 focus-visible:ring-1 focus-visible:ring-ring md:group-hover/turn:opacity-100"
+                  title="Branch from this turn"
+                  aria-label="Branch from this turn"
+                >
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 3v12m0 0a3 3 0 1 0 3 3m-3-3a3 3 0 0 1 3 3m0 0h6a3 3 0 0 0 3-3V9m0 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                  </svg>
+                </button>
+              )}
+              <span className={`shrink-0 text-muted-foreground/40 ${checkpoint ? "hidden md:inline md:group-hover/turn:hidden" : ""}`}>{formatTimestamp(turn.createdAt)}</span>
+            </TurnEl>
 
             {/* Branches off this turn */}
             {turn.branches.length > 0 && (
@@ -218,6 +255,8 @@ const TreeNode = memo(function TreeNode({
                     nodeRefs={nodeRefs}
                     tree={tree}
                     search={search}
+                    checkpoints={checkpoints}
+                    onBranch={onBranch}
                   />
                 ))}
               </div>
@@ -233,7 +272,7 @@ const TreeNode = memo(function TreeNode({
 // Main pane
 // ---------------------------------------------------------------------------
 
-export function TreePane({ taskId, tree, loading }: TreePaneProps) {
+export function TreePane({ taskId, tree, loading, checkpoints, onBranch }: TreePaneProps) {
   const { navigate } = useProjectNav()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -340,7 +379,7 @@ export function TreePane({ taskId, tree, loading }: TreePaneProps) {
         case "Enter": {
           e.preventDefault()
           const cur = flatNodes[currentIndex]
-          if (cur) navigate(`/tasks/${cur.taskId}`)
+          if (cur && cur.taskId !== taskId) navigate(`/tasks/${cur.taskId}`)
           break
         }
         case "/": {
@@ -350,7 +389,7 @@ export function TreePane({ taskId, tree, loading }: TreePaneProps) {
         }
       }
     },
-    [flatNodes, focusedId, collapsed, navigate],
+    [flatNodes, focusedId, collapsed, navigate, taskId],
   )
 
   if (loading) {
@@ -407,7 +446,7 @@ export function TreePane({ taskId, tree, loading }: TreePaneProps) {
       </div>
 
       {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 touch-pan-y overflow-y-auto py-1">
         <TreeNode
           node={tree}
           currentTaskId={taskId}
@@ -419,6 +458,8 @@ export function TreePane({ taskId, tree, loading }: TreePaneProps) {
           nodeRefs={nodeRefs}
           tree={tree}
           search={search}
+          checkpoints={checkpoints}
+          onBranch={onBranch}
         />
       </div>
 
