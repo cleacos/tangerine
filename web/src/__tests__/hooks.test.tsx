@@ -1,7 +1,7 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test"
 import { renderHook, act, waitFor } from "@testing-library/react"
 import { useTasks } from "../hooks/useTasks"
-import { applyActivityUpdate, applyAssistantStreamMessage, applyThinkingStreamMessage, applyUsageUpdate, mergeActivitySnapshot, useSession } from "../hooks/useSession"
+import { applyActivityUpdate, applyAssistantStreamMessage, applyThinkingStreamMessage, applyUsageUpdate, filterVisibleQueuedPrompts, mergeActivitySnapshot, QUEUE_FLASH_SUPPRESS_MS, useSession } from "../hooks/useSession"
 import { useMentionPicker } from "../hooks/useMentionPicker"
 import { useFileMentionPicker } from "../hooks/useFileMentionPicker"
 import { useSlashCommandPicker } from "../hooks/useSlashCommandPicker"
@@ -9,7 +9,7 @@ import { usePanelActions } from "../hooks/usePanelActions"
 import { useResizable } from "../hooks/useResizable"
 import { getActions, getAction, setShortcutOverrides, _resetForTesting } from "../lib/actions"
 import { defaultShortcuts } from "../lib/default-shortcuts"
-import type { Task } from "@tangerine/shared"
+import type { PromptImage, PromptQueueEntry, Task } from "@tangerine/shared"
 import type { PointerEvent as ReactPointerEvent } from "react"
 const mockTasks = [
   {
@@ -131,6 +131,40 @@ describe("mergeActivitySnapshot", () => {
   })
 })
 
+describe("filterVisibleQueuedPrompts", () => {
+  test("hides queued prompts that match recent optimistic messages", () => {
+    const queued = [{ id: "q-1", text: "hello", enqueuedAt: 1 }]
+    const pending = new Map([["m-1", { content: "hello", sentAt: 1000 }]])
+
+    expect(filterVisibleQueuedPrompts(queued, pending, 1000)).toEqual([])
+    expect(filterVisibleQueuedPrompts(queued, pending, 1000 + QUEUE_FLASH_SUPPRESS_MS + 1)).toEqual(queued)
+  })
+
+  test("uses displayText when server queued prompt includes system notes", () => {
+    const queued = [{ id: "q-1", text: "system notes\n\nhello", displayText: "hello", enqueuedAt: 1 }]
+    const pending = new Map([["m-1", { content: "hello", sentAt: 1000 }]])
+
+    expect(filterVisibleQueuedPrompts(queued, pending, 1000)).toEqual([])
+  })
+
+  test("hides queued prompt when matching text has matching images", () => {
+    const images: PromptImage[] = [{ mediaType: "image/png", data: "same-image" }]
+    const queued: PromptQueueEntry[] = [{ id: "q-1", text: "see screenshot", images, enqueuedAt: 1 }]
+    const pending = new Map([["m-1", { content: "see screenshot", images, sentAt: 1000 }]])
+
+    expect(filterVisibleQueuedPrompts(queued, pending, 1000)).toEqual([])
+  })
+
+  test("keeps queued prompt visible when matching text has different images", () => {
+    const queuedImages: PromptImage[] = [{ mediaType: "image/png", data: "queued-image" }]
+    const pendingImages: PromptImage[] = [{ mediaType: "image/png", data: "pending-image" }]
+    const queued: PromptQueueEntry[] = [{ id: "q-1", text: "see screenshot", images: queuedImages, enqueuedAt: 1 }]
+    const pending = new Map([["m-1", { content: "see screenshot", images: pendingImages, sentAt: 1000 }]])
+
+    expect(filterVisibleQueuedPrompts(queued, pending, 1000)).toEqual(queued)
+  })
+})
+
 describe("applyUsageUpdate", () => {
   test("updates context tokens and window max from ACP usage events", () => {
     expect(applyUsageUpdate(
@@ -236,7 +270,7 @@ describe("useSession", () => {
     }
   })
 
-  test("removes optimistic message from chat when queue update shows it was queued", async () => {
+  test("moves optimistic message from chat to queue when queue persists", async () => {
     const originalWebSocket = globalThis.WebSocket
     let wsInstance: { onmessage: ((event: MessageEvent) => void) | null; send: (data: string) => void } | null = null
     class TestWebSocket {
@@ -305,10 +339,76 @@ describe("useSession", () => {
         }))
       })
 
-      // Optimistic message should be removed from chat (it's now in queue)
+      // User message stays in chat; the matching queued entry is hidden to avoid idle-send flicker.
+      expect(result.current.messages).toHaveLength(1)
+      expect(result.current.messages[0].role).toBe("user")
+      expect(result.current.messages[0].content).toBe("hello world")
+      expect(result.current.queuedPrompts).toHaveLength(0)
+      expect(result.current.queueLength).toBe(0)
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, QUEUE_FLASH_SUPPRESS_MS + 20))
+      })
+
       expect(result.current.messages).toHaveLength(0)
       expect(result.current.queuedPrompts).toHaveLength(1)
       expect(result.current.queuedPrompts[0].text).toBe("hello world")
+    } finally {
+      globalThis.WebSocket = originalWebSocket
+    }
+  })
+
+  test("keeps optimistic message when stale REST snapshot resolves after send", async () => {
+    const originalWebSocket = globalThis.WebSocket
+    let resolveMessages: (() => void) | null = null
+    class TestWebSocket {
+      static readonly CLOSING = 2
+      readonly readyState = 1
+      onopen: ((event: Event) => void) | null = null
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: ((event: Event) => void) | null = null
+      onclose: ((event: CloseEvent) => void) | null = null
+      constructor(_url: string) { }
+      send(_data: string) { }
+      close() { }
+    }
+    globalThis.WebSocket = TestWebSocket as unknown as typeof WebSocket
+    globalThis.fetch = mock((url: string) => {
+      if (url.includes("/messages")) {
+        return new Promise<Response>((resolve) => {
+          resolveMessages = () => resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }))
+        })
+      }
+      if (url.includes("/activities") || url.includes("/queued-prompts")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }))
+      }
+      if (url.includes("/config-options")) {
+        return Promise.resolve(new Response(JSON.stringify({ configOptions: [] }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      }
+      if (url.includes("/slash-commands")) {
+        return Promise.resolve(new Response(JSON.stringify({ commands: [] }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }))
+    }) as typeof fetch
+
+    try {
+      const { result } = renderHook(() => useSession("task-1"))
+      await waitFor(() => expect(resolveMessages).toBeTruthy())
+
+      act(() => {
+        result.current.sendPrompt("race message")
+      })
+      expect(result.current.messages).toHaveLength(1)
+      expect(result.current.messages[0].content).toBe("race message")
+
+      await act(async () => {
+        resolveMessages?.()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(result.current.messages).toHaveLength(1)
+      expect(result.current.messages[0].role).toBe("user")
+      expect(result.current.messages[0].content).toBe("race message")
     } finally {
       globalThis.WebSocket = originalWebSocket
     }

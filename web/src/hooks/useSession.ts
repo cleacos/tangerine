@@ -95,6 +95,30 @@ export function mergeActivitySnapshot(activities: ActivityEntry[], snapshot: Act
   return [...byId.values()].sort((a, b) => activityStartMs(a) - activityStartMs(b) || a.id - b.id)
 }
 
+export function mergeMessageSnapshot(current: ChatMessage[], snapshot: ChatMessage[], requestedAtMs: number): ChatMessage[] {
+  const additions: ChatMessage[] = []
+  for (const message of current) {
+    if (messageTimestampMs(message) < requestedAtMs) continue
+    if (isMessageRepresented(message, snapshot) || isMessageRepresented(message, additions)) continue
+    additions.push(message)
+  }
+  return additions.length > 0 ? [...snapshot, ...additions] : snapshot
+}
+
+function isMessageRepresented(message: ChatMessage, candidates: ChatMessage[]): boolean {
+  const messageMs = messageTimestampMs(message)
+  return candidates.some((candidate) => {
+    if (candidate.role !== message.role || candidate.content !== message.content) return false
+    const candidateMs = messageTimestampMs(candidate)
+    return messageMs === 0 || candidateMs === 0 || candidateMs >= messageMs
+  })
+}
+
+function messageTimestampMs(message: Pick<ChatMessage, "timestamp">): number {
+  const parsed = Date.parse(message.timestamp)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function isNewerActivity(candidate: ActivityEntry, current: ActivityEntry): boolean {
   return activityFreshnessMs(candidate) > activityFreshnessMs(current)
 }
@@ -111,6 +135,62 @@ function activityFreshnessMs(activity: ActivityEntry): number {
 function activityStartMs(activity: ActivityEntry): number {
   const parsed = Date.parse(activity.timestamp)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+export const QUEUE_FLASH_SUPPRESS_MS = 800
+const QUEUE_OPTIMISTIC_TTL_MS = 30000
+
+interface PendingOptimisticPrompt {
+  acknowledged: boolean
+  content: string
+  images?: PromptImage[]
+  sentAt: number
+  revealTimer: ReturnType<typeof setTimeout>
+  cleanupTimer: ReturnType<typeof setTimeout>
+}
+
+function queuedPromptDisplayText(entry: PromptQueueEntry): string {
+  return entry.displayText ?? entry.text
+}
+
+function clonePromptImages(images?: PromptImage[]): PromptImage[] | undefined {
+  if (!images || images.length === 0) return undefined
+  return images.map((image) => ({ ...image }))
+}
+
+function promptImagesEqual(left?: PromptImage[], right?: PromptImage[]): boolean {
+  const leftImages = left ?? []
+  const rightImages = right ?? []
+  if (leftImages.length !== rightImages.length) return false
+  return leftImages.every((image, index) => {
+    const other = rightImages[index]
+    return other !== undefined && image.mediaType === other.mediaType && image.data === other.data
+  })
+}
+
+function queuedPromptMatchesPending(
+  entry: PromptQueueEntry,
+  pending: Pick<PendingOptimisticPrompt, "content" | "images">,
+): boolean {
+  return queuedPromptDisplayText(entry) === pending.content && promptImagesEqual(entry.images, pending.images)
+}
+
+export function filterVisibleQueuedPrompts(
+  queuedPrompts: PromptQueueEntry[],
+  pendingOptimistic: ReadonlyMap<string, Pick<PendingOptimisticPrompt, "content" | "images" | "sentAt">>,
+  now: number,
+): PromptQueueEntry[] {
+  const suppressiblePrompts = [...pendingOptimistic.values()]
+    .filter((entry) => now - entry.sentAt < QUEUE_FLASH_SUPPRESS_MS)
+
+  if (suppressiblePrompts.length === 0) return queuedPrompts
+
+  return queuedPrompts.filter((entry) => {
+    const matchIndex = suppressiblePrompts.findIndex((pending) => queuedPromptMatchesPending(entry, pending))
+    if (matchIndex === -1) return true
+    suppressiblePrompts.splice(matchIndex, 1)
+    return false
+  })
 }
 
 export interface UsageState {
@@ -130,6 +210,8 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
   const [activities, setActivities] = useState<ActivityEntry[]>([])
   const [agentStatus, setAgentStatus] = useState<"idle" | "working">("idle")
   const [queuedPrompts, setQueuedPrompts] = useState<PromptQueueEntry[]>([])
+  const queuedPromptsRef = useRef<PromptQueueEntry[]>([])
+  const [queueVisibilityNow, setQueueVisibilityNow] = useState(() => Date.now())
   const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null)
   const [contextTokens, setContextTokens] = useState(initialContextTokens ?? 0)
   const [contextWindowMax, setContextWindowMax] = useState<number | null>(initialContextWindowMax ?? null)
@@ -140,10 +222,9 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
   activeTaskIdRef.current = taskId
   const processedCountRef = useRef(0)
   const activeAssistantStreamIdRef = useRef<string | null>(null)
-  // Track optimistic user message IDs so we can deduplicate WS broadcasts
-  // without false-positives when the same text is sent twice.
-  // Map value: true = server-acknowledged (WS broadcast received), false = not yet
-  const pendingOptimisticRef = useRef<Map<string, boolean>>(new Map())
+  // Track optimistic user messages so WS broadcasts dedupe without hiding
+  // real queued messages forever when the server briefly queues an idle send.
+  const pendingOptimisticRef = useRef<Map<string, PendingOptimisticPrompt>>(new Map())
 
   // Sync context usage when persisted task values change (e.g. on initial load or poll).
   // Reset when switching tasks and new data hasn't loaded yet.
@@ -162,6 +243,7 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
     setActivities([])
     setAgentStatus("idle")
     setQueuedPrompts([])
+    queuedPromptsRef.current = []
     setTaskStatus(null)
     setContextTokens(0)
     setContextWindowMax(null)
@@ -169,7 +251,17 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
     setSlashCommands([])
     processedCountRef.current = 0
     activeAssistantStreamIdRef.current = null
+    for (const pending of pendingOptimisticRef.current.values()) clearPendingOptimistic(pending)
+    pendingOptimisticRef.current.clear()
+    setQueueVisibilityNow(Date.now())
   }, [taskId])
+
+  useEffect(() => {
+    return () => {
+      for (const pending of pendingOptimisticRef.current.values()) clearPendingOptimistic(pending)
+      pendingOptimisticRef.current.clear()
+    }
+  }, [])
 
   // Clear stale stream ID when disconnected to prevent corrupted messages on reconnect
   useEffect(() => {
@@ -178,41 +270,76 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
     }
   }, [connected])
 
+  function clearPendingOptimistic(pending: PendingOptimisticPrompt): void {
+    clearTimeout(pending.revealTimer)
+    clearTimeout(pending.cleanupTimer)
+  }
+
+  function applyQueuedPrompts(next: PromptQueueEntry[]): void {
+    queuedPromptsRef.current = next
+    setQueuedPrompts(next)
+    removeOptimisticMessagesForVisibleQueue(Date.now())
+  }
+
+  function removeOptimisticMessagesForVisibleQueue(now: number): void {
+    const visibleQueued = filterVisibleQueuedPrompts(queuedPromptsRef.current, pendingOptimisticRef.current, now)
+    const unmatchedVisibleQueued = [...visibleQueued]
+    const optimisticIdsToRemove: string[] = []
+
+    for (const [optimisticId, pending] of pendingOptimisticRef.current) {
+      const matchIndex = unmatchedVisibleQueued.findIndex((entry) => queuedPromptMatchesPending(entry, pending))
+      if (matchIndex === -1) continue
+      optimisticIdsToRemove.push(optimisticId)
+      unmatchedVisibleQueued.splice(matchIndex, 1)
+    }
+
+    if (optimisticIdsToRemove.length > 0) {
+      for (const optimisticId of optimisticIdsToRemove) {
+        const pending = pendingOptimisticRef.current.get(optimisticId)
+        if (pending) clearPendingOptimistic(pending)
+        pendingOptimisticRef.current.delete(optimisticId)
+      }
+      setMessages((prev) => prev.filter((message) => !optimisticIdsToRemove.includes(message.id)))
+    }
+
+    setQueueVisibilityNow(now)
+  }
+
   // Load initial messages + activities via REST
   const refreshFromRest = useCallback(async () => {
     const refreshTaskId = taskId
     const isCurrentTask = () => activeTaskIdRef.current === refreshTaskId
 
     try {
+      const messagesRequestedAtMs = Date.now()
       const logs = await fetchMessages(refreshTaskId)
       if (!isCurrentTask()) return
-      setMessages(
-        logs.map((log: SessionLog) => {
-          const msg: ChatMessage = {
-            id: String(log.id),
-            role: log.role,
-            content: log.content,
-            timestamp: log.timestamp,
-          }
-          if (log.role === "plan") {
-            try {
-              msg.planEntries = JSON.parse(log.content) as AgentPlanEntry[]
-            } catch { /* ignore malformed */ }
-          }
-          if (log.role === "content") {
-            try {
-              msg.contentBlock = JSON.parse(log.content) as AgentContentBlock
-            } catch { /* ignore malformed */ }
-          }
-          if (log.images) {
-            try {
-              const filenames = JSON.parse(log.images) as string[]
-              msg.images = filenames.map((f) => ({ src: `/api/tasks/${refreshTaskId}/images/${f}` }))
-            } catch { /* ignore malformed */ }
-          }
-          return msg
-        }),
-      )
+      const snapshot = logs.map((log: SessionLog) => {
+        const msg: ChatMessage = {
+          id: String(log.id),
+          role: log.role,
+          content: log.content,
+          timestamp: log.timestamp,
+        }
+        if (log.role === "plan") {
+          try {
+            msg.planEntries = JSON.parse(log.content) as AgentPlanEntry[]
+          } catch { /* ignore malformed */ }
+        }
+        if (log.role === "content") {
+          try {
+            msg.contentBlock = JSON.parse(log.content) as AgentContentBlock
+          } catch { /* ignore malformed */ }
+        }
+        if (log.images) {
+          try {
+            const filenames = JSON.parse(log.images) as string[]
+            msg.images = filenames.map((f) => ({ src: `/api/tasks/${refreshTaskId}/images/${f}` }))
+          } catch { /* ignore malformed */ }
+        }
+        return msg
+      })
+      setMessages((prev) => mergeMessageSnapshot(prev, snapshot, messagesRequestedAtMs))
     } catch {
       // Messages may not be available yet
     }
@@ -244,7 +371,7 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
     try {
       const queued = await fetchQueuedPrompts(refreshTaskId)
       if (!isCurrentTask()) return
-      setQueuedPrompts(queued)
+      applyQueuedPrompts(queued)
     } catch {
       // Queue may not be available yet
     }
@@ -353,23 +480,13 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
             // Mark as acknowledged (don't delete) so queue handler can check later.
             // Only match unacknowledged entries to avoid matching stale ones.
             if (newMsg.role === "user" && pendingOptimisticRef.current.size > 0) {
-              const matchId = [...pendingOptimisticRef.current.entries()].find(([id, acknowledged]) => {
-                if (acknowledged) return false
-                const opt = prev.find((m) => m.id === id)
-                return opt && opt.content === newMsg.content
+              const matchId = [...pendingOptimisticRef.current.entries()].find(([, pending]) => {
+                if (pending.acknowledged) return false
+                return pending.content === newMsg.content
               })?.[0]
               if (matchId) {
-                pendingOptimisticRef.current.set(matchId, true)
-                // Clear any stale acknowledged entries with same content to prevent buildup
-                const matchContent = prev.find((m) => m.id === matchId)?.content
-                for (const [id, ack] of pendingOptimisticRef.current) {
-                  if (id !== matchId && ack) {
-                    const entry = prev.find((m) => m.id === id)
-                    if (entry?.content === matchContent) {
-                      pendingOptimisticRef.current.delete(id)
-                    }
-                  }
-                }
+                const pending = pendingOptimisticRef.current.get(matchId)
+                if (pending) pending.acknowledged = true
                 return prev
               }
             }
@@ -413,35 +530,9 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
         setAgentStatus(msg.agentStatus)
         break
       case "queue":
-        // If queue contains a message we optimistically added to chat, remove from chat.
-        // This fixes the race where client thinks agent idle but server queues (agent busy).
-        // Only match against server-acknowledged entries in pendingOptimisticRef to avoid
-        // removing legitimate chat history (e.g. duplicate messages, or messages from reconnect).
-        setMessages((prev) => {
-          if (pendingOptimisticRef.current.size === 0) return prev
-          const toRemove = new Set<string>()
-          // Build list of queued texts for matching (handle duplicates with 1:1 matching)
-          const queuedTexts = msg.queuedPrompts.map((e) => e.text)
-          for (const [optimisticId, acknowledged] of pendingOptimisticRef.current) {
-            // Only check acknowledged entries (server received, may have queued)
-            if (!acknowledged) continue
-            const opt = prev.find((m) => m.id === optimisticId)
-            if (!opt) continue
-            const matchIdx = queuedTexts.indexOf(opt.content)
-            if (matchIdx !== -1) {
-              toRemove.add(optimisticId)
-              pendingOptimisticRef.current.delete(optimisticId)
-              // Remove matched text to handle duplicate sends correctly (1:1 matching)
-              queuedTexts.splice(matchIdx, 1)
-            } else {
-              // Acknowledged but not in queue = message was processed, not queued. Clear tracking.
-              pendingOptimisticRef.current.delete(optimisticId)
-            }
-          }
-          if (toRemove.size === 0) return prev
-          return prev.filter((m) => !toRemove.has(m.id))
-        })
-        setQueuedPrompts(msg.queuedPrompts)
+        // Suppress short idle-send queue flashes, then move persistent queued
+        // prompts out of chat so the same text is not shown twice.
+        applyQueuedPrompts(msg.queuedPrompts)
         break
       case "error":
         setMessages((prev) => [
@@ -464,16 +555,26 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
     (text: string, images?: PromptImage[]) => {
       const shouldQueue = agentStatus === "working"
       if (!shouldQueue && (text || images?.length)) {
-        const optimisticId = `user-${Date.now()}`
-        pendingOptimisticRef.current.set(optimisticId, false)
+        const now = Date.now()
+        const optimisticId = `user-${now}`
+        const optimisticImages = clonePromptImages(images)
+        const revealTimer = setTimeout(() => {
+          removeOptimisticMessagesForVisibleQueue(Date.now())
+        }, QUEUE_FLASH_SUPPRESS_MS)
+        const cleanupTimer = setTimeout(() => {
+          pendingOptimisticRef.current.delete(optimisticId)
+          setQueueVisibilityNow(Date.now())
+        }, QUEUE_OPTIMISTIC_TTL_MS)
+        pendingOptimisticRef.current.set(optimisticId, { acknowledged: false, content: text, images: optimisticImages, sentAt: now, revealTimer, cleanupTimer })
+        setQueueVisibilityNow(now)
         setMessages((prev) => [
           ...prev,
           {
             id: optimisticId,
             role: "user",
             content: text,
-            timestamp: new Date().toISOString(),
-            images: images?.map((img) => ({ src: `data:${img.mediaType};base64,${img.data}` })),
+            timestamp: new Date(now).toISOString(),
+            images: optimisticImages?.map((img) => ({ src: `data:${img.mediaType};base64,${img.data}` })),
           },
         ])
         setAgentStatus("working")
@@ -490,13 +591,23 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
 
   const handleUpdateQueuedPrompt = useCallback(async (promptId: string, text: string) => {
     const updated = await updateQueuedPrompt(taskId, promptId, text)
-    setQueuedPrompts((prev) => prev.map((entry) => entry.id === promptId ? updated : entry))
+    setQueuedPrompts((prev) => {
+      const next = prev.map((entry) => entry.id === promptId ? updated : entry)
+      queuedPromptsRef.current = next
+      return next
+    })
   }, [taskId])
 
   const handleRemoveQueuedPrompt = useCallback(async (promptId: string) => {
     await removeQueuedPrompt(taskId, promptId)
-    setQueuedPrompts((prev) => prev.filter((entry) => entry.id !== promptId))
+    setQueuedPrompts((prev) => {
+      const next = prev.filter((entry) => entry.id !== promptId)
+      queuedPromptsRef.current = next
+      return next
+    })
   }, [taskId])
 
-  return { messages, activities, agentStatus, queueLength: queuedPrompts.length, queuedPrompts, connected, taskStatus, sendPrompt, abort, updateQueuedPrompt: handleUpdateQueuedPrompt, removeQueuedPrompt: handleRemoveQueuedPrompt, contextTokens, contextWindowMax, configOptions, slashCommands }
+  const visibleQueuedPrompts = filterVisibleQueuedPrompts(queuedPrompts, pendingOptimisticRef.current, queueVisibilityNow)
+
+  return { messages, activities, agentStatus, queueLength: visibleQueuedPrompts.length, queuedPrompts: visibleQueuedPrompts, connected, taskStatus, sendPrompt, abort, updateQueuedPrompt: handleUpdateQueuedPrompt, removeQueuedPrompt: handleRemoveQueuedPrompt, contextTokens, contextWindowMax, configOptions, slashCommands }
 }
