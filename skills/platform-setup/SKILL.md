@@ -3,7 +3,7 @@ name: platform-setup
 description: Set up Tangerine on the host machine or inside a VM — install tools, configure projects, clone repos, and install agent skills.
 metadata:
   author: tung
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # Tangerine Init Skill
@@ -19,7 +19,7 @@ Host (laptop) — or VM (Lima)
 │                          1 (task worktree)
 │                          2 (task worktree)
 ├── {workspace}/project-b/0, 1, ...
-├── agents (claude, opencode) — local processes
+├── ACP agents — local stdio processes
 └── Apache, MariaDB, tools — shared
 ```
 `{workspace}` defaults to `~/tangerine-workspace` but is configurable via `config.workspace` in `~/tangerine/config.json`.
@@ -74,12 +74,59 @@ User is on the machine where Tangerine will run — either their host or inside 
      && sudo apt update && sudo apt install gh -y
    ```
 
-2. **Verify agent CLIs are installed and authenticated**:
-   ```bash
-   which claude && claude --version
-   which opencode && opencode --version
+2. **Choose, install, and authenticate ACP agent command(s)**.
+
+   Tangerine is an ACP client only. It does not bundle provider adapters or manage LLM credentials. Configure one or more ACP commands in top-level `agents[]`.
+
+   Common choices:
+
+   | Agent | ACP package/path | Verify command |
+   |-------|------------------|----------------|
+   | Claude Agent | ACP registry adapter `@agentclientprotocol/claude-agent-acp` | `bunx --bun @agentclientprotocol/claude-agent-acp --help` |
+   | Codex | Zed adapter `@zed-industries/codex-acp` | `bunx --bun @zed-industries/codex-acp --help` |
+   | OpenCode | native ACP in `opencode-ai` | `bunx --bun opencode-ai acp --help` |
+   | Pi | adapter `pi-acp` | `bunx --bun pi-acp --help` |
+
+   Example no-global-install config:
+   ```json
+   {
+     "agents": [
+       { "id": "claude", "name": "Claude Agent", "command": "bunx", "args": ["--bun", "@agentclientprotocol/claude-agent-acp"] },
+       { "id": "codex", "name": "Codex", "command": "bunx", "args": ["--bun", "@zed-industries/codex-acp"] },
+       { "id": "opencode", "name": "OpenCode", "command": "bunx", "args": ["--bun", "opencode-ai", "acp"] },
+       { "id": "pi", "name": "Pi", "command": "bunx", "args": ["--bun", "pi-acp"] }
+     ],
+     "defaultAgent": "claude"
+   }
    ```
-   Tangerine assumes agents are already installed and authenticated. If any are missing, install them (`npm install -g @anthropic-ai/claude-code opencode-ai`) and authenticate each before starting Tangerine — Tangerine does not manage credentials.
+
+   Global install alternative:
+   ```bash
+   bun add -g @agentclientprotocol/claude-agent-acp @zed-industries/codex-acp opencode-ai pi-acp
+   claude-agent-acp --help
+   codex-acp --help
+   opencode acp --help
+   pi-acp --help
+   ```
+
+   Global-install config:
+   ```json
+   {
+     "agents": [
+       { "id": "claude", "name": "Claude Agent", "command": "claude-agent-acp" },
+       { "id": "codex", "name": "Codex", "command": "codex-acp" },
+       { "id": "opencode", "name": "OpenCode", "command": "opencode", "args": ["acp"] },
+       { "id": "pi", "name": "Pi", "command": "pi-acp" }
+     ],
+     "defaultAgent": "claude"
+   }
+   ```
+
+   Authenticate each underlying agent before starting Tangerine:
+   - Claude Agent adapter needs Claude Code/Claude Agent auth configured.
+   - Codex adapter needs Codex auth configured.
+   - OpenCode needs provider auth configured via OpenCode.
+   - Pi adapter needs Pi CLI/config/auth configured.
 
 3. **Clone tangerine**:
    ```bash
@@ -195,15 +242,15 @@ User wants a Lima VM to run Tangerine in. You help them create it, then they run
    limactl start --name tangerine /tmp/tangerine.yaml
    ```
 
-2. **Shell into the VM**, install your coding agent(s), authenticate them, then run `/platform-setup`:
+2. **Shell into the VM**, install your ACP agent command(s), authenticate them, then run `/platform-setup`:
    ```bash
    limactl shell tangerine
-   # Install your agent(s) of choice, e.g.:
-   npm install -g @anthropic-ai/claude-code   # Claude Code
-   npm install -g opencode-ai                 # OpenCode
-   # Authenticate each agent before continuing:
-   claude       # complete OAuth
-   opencode     # complete auth
+   # Install/configure the ACP agent command(s) you want Tangerine to run.
+   bunx --bun @agentclientprotocol/claude-agent-acp --help
+   bunx --bun @zed-industries/codex-acp --help
+   bunx --bun opencode-ai acp --help
+   bunx --bun pi-acp --help
+   # Authenticate each underlying agent before continuing.
    gh auth login
    # Then run platform-setup to install tools and configure projects:
    # /platform-setup
@@ -247,6 +294,7 @@ User wants to add a project to an already-running Tangerine instance. You help t
    - Setup command — **required**, ask the user if it cannot be detected
    - Test command
    - Post-update command (install deps + build, runs after git pull)
+   - ACP agent commands to configure and chosen `defaultAgent`
 
 6. **Write config** to `~/tangerine/config.json`.
 
@@ -258,15 +306,16 @@ User wants to add a project to an already-running Tangerine instance. You help t
    **Optional fields** (omit if not needed):
    - `test` — test command
    - `defaultBranch` — defaults to `"main"`
-   - `defaultProvider` — `"claude-code"` | `"opencode"` | `"codex"`, defaults to `"claude-code"`
-   - `model` — override the default LLM model
+   - `defaultAgent` — configured ACP agent ID from top-level `agents[]`, defaults to top-level `defaultAgent` or `"acp"`
+   - `model` — optional initial model hint for ACP agents that expose model config
    - `env` — key/value pairs injected into agent environment
    - `postUpdateCommand` — runs after `git pull` (install + build)
    - `predefinedPrompts` — array of `{label, text}` quick-send buttons
 
    **Top-level optional fields** (outside `projects[]`):
-   - `model` — default LLM model for new tasks
-   - `models` — array of available model strings
+   - `agents` — array of ACP agents: `{ "id", "name", "command", "args"? }`
+   - `defaultAgent` — default ACP agent ID, defaults to `"acp"`
+   - `model` — optional initial model hint
    - `workspace` — base directory for clones/worktrees (default: `~/tangerine-workspace`)
    - `sshHost` — SSH hostname for editor deep-links (e.g. `"dev-vm"`). Must match a `Host` entry in `~/.ssh/config` on the host machine where the editor runs
    - `sshUser` — SSH username for Zed editor links (e.g. `"tung.linux"`)
@@ -282,10 +331,17 @@ User wants to add a project to an already-running Tangerine instance. You help t
          "defaultBranch": "main",
          "setup": "pnpm install",
          "test": "pnpm test",
-         "defaultProvider": "claude-code",
+         "defaultAgent": "claude",
          "postUpdateCommand": "pnpm install && pnpm build"
        }
      ],
+     "agents": [
+       { "id": "claude", "name": "Claude Agent", "command": "bunx", "args": ["--bun", "@agentclientprotocol/claude-agent-acp"] },
+       { "id": "codex", "name": "Codex", "command": "bunx", "args": ["--bun", "@zed-industries/codex-acp"] },
+       { "id": "opencode", "name": "OpenCode", "command": "bunx", "args": ["--bun", "opencode-ai", "acp"] },
+       { "id": "pi", "name": "Pi", "command": "bunx", "args": ["--bun", "pi-acp"] }
+     ],
+     "defaultAgent": "claude",
      "sshHost": "dev-vm",
      "sshUser": "tung.linux",
      "editor": "vscode"
@@ -301,13 +357,9 @@ User wants to add a project to an already-running Tangerine instance. You help t
 
 ## Credentials
 
-Tangerine does not manage agent credentials. Before starting Tangerine, ensure each agent you plan to use is already installed and authenticated:
+Tangerine does not manage agent credentials. Before starting Tangerine, ensure each ACP agent command in top-level `agents[]` is installed and authenticated.
 
-- **Claude Code**: `claude --version` works and `claude` can make API calls (OAuth or `ANTHROPIC_API_KEY` set)
-- **OpenCode**: `opencode --version` works and `opencode` can make API calls
-- **Codex**: `codex --version` works and credentials are configured
-
-Tangerine does not configure or verify credentials — it relies on the agent's own auth being in place. If an agent fails to start due to missing credentials, authenticate it directly (e.g. run `claude` once to complete OAuth, or set the relevant API key in your shell profile) and retry.
+Tangerine does not configure or verify credentials — it relies on the agent's own auth being in place. If an agent fails to start due to missing credentials, authenticate it directly with that agent's CLI and retry. The known adapters above are process adapters only; Claude/Codex/OpenCode/Pi credentials still live in their own CLIs/config.
 
 `gh` CLI is also required for GitHub integration (PR tracking, webhook setup). Tangerine checks `gh auth status` on startup and will warn if it is not authenticated — run `gh auth login` to fix it.
 
@@ -333,7 +385,7 @@ Tangerine does not configure or verify credentials — it relies on the agent's 
 
 Only ask if you can't determine from the codebase:
 - Repo URL (if no git remote found)
-- Which agent skills to install
+- Which ACP agent command(s) to configure (Claude Agent, Codex, OpenCode, Pi, or custom ACP command) and which one should be `defaultAgent`
 
 ## After Init
 

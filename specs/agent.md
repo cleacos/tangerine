@@ -1,125 +1,118 @@
 # Agent Integration
 
-Tangerine currently supports four providers through a shared abstraction:
+Tangerine's target agent integration is ACP-only. Tangerine is the ACP client; coding agents are external ACP-compatible commands reached over stdio.
 
-- `opencode`
-- `claude-code`
-- `codex`
-- `pi`
+Legacy provider-specific implementations have been removed. See [ACP Migration](./acp-migration.md) for current migration status and [ACP Adapter Matrix](./acp-adapter-matrix.md) for observed adapter behavior/probe workflow.
 
-All providers run as local subprocesses and are wrapped behind the interfaces in `packages/server/src/agent/provider.ts`.
+## ACP Runtime
 
-## Shared Provider Contract
+Implementation target: `agent/acp-provider.ts` (or equivalent thin ACP client wrapper).
 
-The provider layer exposes:
+Responsibilities:
 
-- `AgentFactory`
-- `AgentHandle`
-- normalized `AgentEvent` messages
-- prompt images support
-- optional hot config updates
+- spawn the configured ACP agent command as a local subprocess
+- speak JSON-RPC over newline-delimited stdio
+- call `initialize` with ACP protocol version 1
+- create sessions with `session/new`
+- reconnect with `session/resume` when supported, then `session/load` when supported, otherwise create a fresh session and let Tangerine re-send the initial prompt when needed
+- send prompts with `session/prompt`
+- cancel active work with `session/cancel`
+- close sessions with `session/close` when supported
+- handle `session/request_permission`
+- apply session configuration via `session/set_config_option`, or compatibility `session/set_model` / `session/set_mode` for ACP agents that expose legacy model/mode state
+- expose session id and process pid for task persistence and cleanup
 
-### AgentEvent kinds
+## Configured ACP Agents
 
-| Kind | Description |
-|------|-------------|
-| `message.streaming` | Partial assistant text (streaming) |
-| `message.complete` | Final assistant/narration message |
-| `status` | `idle` / `working` state changes |
-| `error` | Provider-level error |
-| `tool.start` / `tool.end` | Tool call lifecycle |
-| `thinking` | Extended thinking content |
-| `usage` | Token counts for the completed turn: `{ inputTokens, outputTokens }`. Providers emit this when the data is available. `inputTokens` reflects the total context window consumed (including cache) — suitable for showing context window fill. Persisted to `tasks.input_tokens` / `tasks.output_tokens` and broadcast via WebSocket.
+Provider identity has become configured ACP agent identity. The compatibility `tasks.provider` column stores the selected ACP agent id until a future schema rename.
 
-Current provider selection type:
+Config shape:
 
-```typescript
-type ProviderType = "opencode" | "claude-code" | "codex" | "pi"
-```
-
-The runtime stores `agent_session_id` and `agent_pid` on tasks so sessions can be resumed or inspected after restart.
-
-## AgentStartContext
-
-The active architecture is local-only. Provider startup context centers on the task and worktree, not VM networking:
-
-```typescript
-interface AgentStartContext {
-  taskId: string
-  workdir: string
-  title: string
-  systemPrompt?: string
-  model?: string
-  reasoningEffort?: string
-  resumeSessionId?: string
-  env?: Record<string, string>
+```json
+{
+  "defaultAgent": "claude",
+  "agents": [
+    { "id": "claude", "name": "Claude Agent", "command": "bunx", "args": ["--bun", "@agentclientprotocol/claude-agent-acp"] },
+    { "id": "codex", "name": "Codex", "command": "bunx", "args": ["--bun", "@zed-industries/codex-acp"] },
+    { "id": "opencode", "name": "OpenCode", "command": "bunx", "args": ["--bun", "opencode-ai", "acp"] },
+    { "id": "pi", "name": "Pi", "command": "bunx", "args": ["--bun", "pi-acp"] }
+  ]
 }
 ```
 
-`AgentHandle` may also expose `setSystemPrompt()` when the provider can apply provider-native system or developer instructions after startup. Tangerine prefers provider-native system prompt channels over prepending internal notes into the first user message.
+Known commands:
 
-## OpenCode
+| Agent | ACP command source |
+|-------|--------------------|
+| Claude Agent | ACP registry adapter `@agentclientprotocol/claude-agent-acp` (`claude-agent-acp`) |
+| Codex | Zed adapter `@zed-industries/codex-acp` (`codex-acp`) |
+| OpenCode | native ACP command `opencode acp` from `opencode-ai` |
+| Pi | `pi-acp` adapter |
 
-Implementation: `agent/opencode-provider.ts`
+No hardcoded provider list should remain after the migration. These are documented setup examples only; users can configure any ACP-compatible command.
 
-- uses the OpenCode SDK / server flow
-- supports prompt sending, abort, event subscription, config updates, and provider-native system prompts via a generated OpenCode agent config
-- can hot-apply model config changes when supported
+## Streaming
 
-## Claude Code
+ACP provides streaming via `session/update`, not a chat UI. Tangerine keeps its dashboard and maps ACP updates into its existing WebSocket/session log format.
 
-Implementation: `agent/claude-code-provider.ts`
+Important ACP updates:
 
-- communicates over stdin/stdout NDJSON
-- event parsing lives in `agent/ndjson.ts`
-- uses Claude Code system prompt flags at startup / resume
-- uses resume sessions when Tangerine restarts or reconfigures a task
+| ACP update | Tangerine event |
+|------------|-----------------|
+| `agent_message_chunk` | `message.streaming`, then final assistant message on prompt completion |
+| `agent_thought_chunk` | `thinking.streaming`, then one persisted `thinking` message on prompt completion |
+| `user_message_chunk` | user message log |
+| `tool_call` | `tool.start` |
+| `tool_call_update` | `tool.end` on completed/failed |
+| `tool_call_update` content `diff` / `terminal` | native diff/terminal content-block card |
+| `plan` | native plan card plus thinking text for compatibility |
+| `current_mode_update` | refresh synthetic mode config option |
+| `config_option_update` | refresh model/reasoning/mode options |
+| `usage_update` | context token usage |
+| non-text content block | generic ACP content-block card |
 
-## Codex
+## Model, Reasoning, and Modes
 
-Implementation: `agent/codex-provider.ts`
+Tangerine must stop discovering models via provider-specific APIs. Learn adapter behavior from source and `tangerine acp probe`, then encode generic ACP compatibility rules.
 
-- starts `codex app-server`
-- communicates over JSON-RPC
-- applies Tangerine system instructions through Codex `developerInstructions` on thread start / resume
-- preserves the underlying Codex thread through `agent_session_id`
-- reapplies `approvalPolicy: "never"` and danger-full-access sandboxing on resume and each turn
+Prefer ACP session config options:
 
-## Pi
+- `category: "model"` for model selection
+- `category: "thought_level"` or `category: "effort"` for reasoning selection
+- `category: "mode"` for agent mode selection
 
-Implementation: `agent/pi-provider.ts`
+Compatibility: several public ACP adapters still return legacy `models` / `modes` session state instead of `configOptions`. Tangerine normalizes those into the same selector model and writes changes with `session/set_model` / `session/set_mode`. Legacy `modes` become `category: "thought_level"` only when the advertised values are semantic thinking/reasoning levels; otherwise they remain `category: "mode"`. Some adapters expose model effort as extension category `"effort"`; Tangerine treats it as the reasoning selector while preserving the original config option ID/category for `session/set_config_option` writes.
 
-- starts `pi` in RPC mode
-- applies system prompts through Pi CLI startup flags and the provider RPC hook when available
-- preserves the underlying Pi session file through `agent_session_id`
+If an agent does not return relevant config options or legacy state, hide or disable that selector.
+
+## Permissions
+
+Initial unattended policy:
+
+1. choose first `allow_once` / `allow_always` option
+2. otherwise choose first provided option
+3. record request and selected option in activity logs
+
+Do not show interactive permission prompts for unattended v0 tasks. Future foreground/manual task modes may add dashboard approval UI.
+
+## Client Capabilities
+
+First pass should advertise minimal capabilities unless needed by a chosen agent:
+
+- filesystem callbacks: optional
+- terminal callbacks: optional
+- image prompts: only send images when agent advertises image support
+
+Tangerine can add filesystem/terminal callbacks later without changing the core agent model.
 
 ## Event Flow
 
-Provider-specific streams are normalized into a common event shape and then fan out to:
+ACP events fan out to the existing Tangerine surfaces:
 
-- WebSocket clients
-- session log persistence
-- activity log classification
-- task status / working-state updates
+- WebSocket task streams
+- `session_logs`
+- `activity_log`
+- task working-state updates
+- token/context usage persistence
 
-The prompt queue in `agent/prompt-queue.ts` ensures prompts sent while a task is busy are drained in order.
-
-## Config Changes
-
-`POST /api/tasks/:id/model` changes `model` and/or `reasoningEffort` for a running task.
-
-The task manager attempts:
-
-1. provider hot-swap via `updateConfig()`
-2. restart-with-resume fallback when hot-swap is unsupported
-
-## Tool Activity Classification
-
-Tool calls are classified into activity log events:
-
-- file reads: `tool.read`
-- file writes: `tool.write`
-- shell commands: `tool.bash`
-- everything else: `tool.other`
-
-This powers the task detail UI and persisted audit trail.
+The dashboard is a Tangerine task UI powered by ACP streams, not an embedded ACP UI.

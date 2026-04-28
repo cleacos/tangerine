@@ -12,9 +12,8 @@ Stored in `tangerine.json` at the project root (or `~/.config/tangerine/config.j
     "name": "wordpress-develop",
     "repo": "https://github.com/WordPress/wordpress-develop",
     "defaultBranch": "trunk",
-    "image": "wordpress-dev",
     "setup": "npm install && npx wp-env start",
-    "defaultProvider": "opencode",
+    "defaultAgent": "claude",
     "previewCommand": "setup-vhost.sh $TANGERINE_PREVIEW_PORT",
     "test": "npx wp-env run tests-wordpress phpunit",
     "env": {
@@ -31,9 +30,8 @@ Stored in `tangerine.json` at the project root (or `~/.config/tangerine/config.j
 | `name` | string | yes | Human-readable project name (also used as project ID) |
 | `repo` | string | yes | Repository URL (or `owner/repo` shorthand) |
 | `defaultBranch` | string | no | Default: `main` |
-| `image` | string | yes | Golden image name (built from image assets dir) |
-| `setup` | string | yes | Shell commands to run after clone (install deps, start dev server) |
-| `defaultProvider` | `"opencode" \| "claude-code" \| "codex" \| "pi"` | no | Default agent provider. Default: `"claude-code"` |
+| `setup` | string | yes | Shell commands to run in task worktrees |
+| `defaultAgent` | string | no | Configured ACP agent ID. Default: top-level `defaultAgent` or `acp` |
 | `previewCommand` | string | no | Command to run on first preview access (e.g. setup vhost, start server). Port available via `$TANGERINE_PREVIEW_PORT` |
 | `test` | string | no | Command to run tests |
 | `extraPorts` | number[] | no | Additional ports to forward |
@@ -46,8 +44,14 @@ Stored in `tangerine.json` at the project root (or `~/.config/tangerine/config.j
 ```json
 {
   "projects": [...],
-  "model": "openai/gpt-5.4",
-  "models": ["openai/gpt-5.4", "anthropic/claude-sonnet-4-20250514", ...],
+  "agents": [
+    { "id": "claude", "name": "Claude Agent", "command": "bunx", "args": ["--bun", "@agentclientprotocol/claude-agent-acp"] },
+    { "id": "codex", "name": "Codex", "command": "bunx", "args": ["--bun", "@zed-industries/codex-acp"] },
+    { "id": "opencode", "name": "OpenCode", "command": "bunx", "args": ["--bun", "opencode-ai", "acp"] },
+    { "id": "pi", "name": "Pi", "command": "bunx", "args": ["--bun", "pi-acp"] }
+  ],
+  "defaultAgent": "claude",
+  "model": "gpt-5",
   "sshHost": "dev-vm",
   "sshUser": "tung.linux",
   "editor": "vscode",
@@ -63,13 +67,25 @@ Stored in `tangerine.json` at the project root (or `~/.config/tangerine/config.j
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `model` | string | Default LLM model for new tasks |
-| `models` | string[] | Available models shown in the UI |
+| `agents` | object[] | Configured ACP agent commands |
+| `defaultAgent` | string | Default ACP agent ID |
+| `model` | string | Optional initial model hint for ACP agents |
 | `workspace` | string | Base directory for project clones and worktrees (default: `~/tangerine-workspace`) |
 | `sshHost` | string | SSH hostname for editor deep-links (e.g. `"dev-vm"`) |
 | `sshUser` | string | SSH username for Zed editor links (e.g. `"tung.linux"`) |
 | `editor` | `"vscode" \| "cursor" \| "zed"` | Editor for deep-link URIs. VS Code/Cursor use `vscode-remote` scheme; Zed uses `zed://ssh/` |
 | `integrations` | object | GitHub webhook and polling configuration |
+
+Known ACP adapter examples:
+
+| Agent ID | Command config |
+|----------|----------------|
+| `claude` | `bunx --bun @agentclientprotocol/claude-agent-acp` or global `claude-agent-acp` |
+| `codex` | `bunx --bun @zed-industries/codex-acp` or global `codex-acp` |
+| `opencode` | `bunx --bun opencode-ai acp` or global `opencode acp` |
+| `pi` | `bunx --bun pi-acp` or global `pi-acp` |
+
+These are examples only. Tangerine accepts any ACP-compatible command and expects each underlying agent to be installed/authenticated outside Tangerine.
 
 When `sshHost` and `editor` are set, the web dashboard shows "Open in {editor}" links on task cards and the task detail page for tasks with worktrees. `sshUser` is required for Zed links.
 
@@ -87,7 +103,7 @@ Base environments with common tooling pre-installed. Project-specific setup runs
 
 ### Two-Layer Build
 
-1. **Base layer** (`tangerine-base`): built from `tangerine.yaml` with cloud-init. Contains Node.js, Docker, OpenCode, Claude Code, gh CLI, etc. Slow (~10 min), rarely rebuilt.
+1. **Base layer** (`tangerine-base`): built from `tangerine.yaml` with cloud-init. Contains Node.js, Docker, ACP agent commands, gh CLI, etc. Slow (~10 min), rarely rebuilt.
 2. **Project layer** (`tangerine-golden-<name>`): cloned from base via `limactl clone` (APFS CoW, instant). Runs project's `build.sh` for project-specific setup.
 
 ### Image Assets
@@ -118,8 +134,8 @@ When a task starts:
 2. Clone repo to /workspace/repo (or git fetch if already there)
 3. Create git worktree: /workspace/worktrees/<task-prefix>
 4. Run project.setup commands in worktree
-5. Start agent (OpenCode or Claude Code) in worktree
-6. Establish SSH tunnels (OpenCode) or pipe stdin/stdout (Claude Code)
+5. Start configured ACP agent in worktree
+6. Connect to ACP agent over stdio
 7. Session ready for chat
 ```
 

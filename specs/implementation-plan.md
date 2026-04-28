@@ -18,8 +18,7 @@ packages/
   server/              # tangerine-server — Hono API + VM + Agent
     src/
       api/             # Hono routes
-      vm/              # Lima provider, ProjectVmManager, SSH, tunnel
-      agent/           # Provider abstraction, OpenCode + Claude Code providers, NDJSON
+      agent/           # ACP client wrapper and prompt queue
       tasks/           # Task lifecycle, cleanup, health, retry
       integrations/    # GitHub polling
       db/              # SQLite schema + queries
@@ -32,19 +31,18 @@ web/                   # tangerine-web — Vite + React
 Core types consumed by both server and web:
 
 - `TaskStatus`: `"created" | "provisioning" | "running" | "done" | "failed" | "cancelled"`
-- `VmStatus`: `"provisioning" | "active" | "stopped" | "destroyed" | "error"`
-- `ProviderType`: `"opencode" | "claude-code"`
-- `Task`: full task object shape (includes `provider`, `worktreePath`, `agentSessionId`, `agentPort`)
-- `ActivityEntry`: activity log entries (type: lifecycle | file | system)
-- `WsServerMessage`: `{ type: "event" | "status" | "error" | "connected"; ... }`
-- `WsClientMessage`: `{ type: "prompt" | "abort"; ... }`
-- `ProjectConfig`: Zod schema with `defaultProvider` field
+- `ProviderType`: configured ACP agent ID string
+- `Task`: full task object shape (includes compatibility `provider`, `worktreePath`, `agentSessionId`)
+- `ActivityEntry`: activity log entries
+- `WsServerMessage`: task/chat/config/plan/content WebSocket events
+- `WsClientMessage`: prompt/abort/client control events
+- `ProjectConfig`: Zod schema with `defaultAgent` field
 
 ---
 
-## Phase 0: OpenCode SDK Spike — DONE
+## Phase 0: Agent Runtime Spike — DONE
 
-Validated OpenCode server mode: create sessions, send prompts, stream SSE events, abort.
+Legacy provider spike superseded by ACP stdio runtime.
 
 ## Phase 1: Foundation — DONE
 
@@ -52,12 +50,10 @@ Project scaffolding, DB schema (tasks with `provider`, `worktree_path`, `agent_s
 
 ## Phase 2: VM + Agent Wiring — DONE
 
-- Per-project persistent VMs via `ProjectVmManager` (no pool)
 - Git worktree isolation per task
-- Agent provider abstraction (`AgentFactory` → `AgentHandle`)
-- OpenCode provider: SSH tunnel + SSE
-- Session lifecycle: get/create VM → clone/fetch repo → create worktree → inject creds → start agent
-- Cleanup: persist messages → shutdown agent → remove worktree (VM persists)
+- ACP agent abstraction (`AgentFactory` → `AgentHandle`)
+- Session lifecycle: fetch repo → acquire worktree → inject env → start ACP agent
+- Cleanup: persist messages → shutdown agent → remove worktree
 
 ## Phase 3: API + Real-time — DONE
 
@@ -75,11 +71,11 @@ Project scaffolding, DB schema (tasks with `provider`, `worktree_path`, `agent_s
 - VM summary card
 - Streaming chat UI
 
-## Phase 5: Multi-Provider + Polish — DONE
+## Phase 5: ACP Runtime + Polish — DONE
 
-- Claude Code provider: SSH stdin/stdout + NDJSON
-- NDJSON parser (`ndjson.ts`) + event mapping
-- `CLAUDE_CODE_OAUTH_TOKEN` credential injection
+- ACP stdio client runtime for configured agent commands
+- ACP `session/update` event mapping
+- ACP config options for model/reasoning/mode selection
 - Server restart reconciliation (`reconcileOnStartup`)
 - Error recovery + retry
 - System logging (DB-backed)
@@ -89,7 +85,7 @@ Project scaffolding, DB schema (tasks with `provider`, `worktree_path`, `agent_s
 ## Critical Path (completed)
 
 ```
-Spike → DB + VM extract → Session lifecycle → WebSocket relay → Chat UI → Claude Code provider
+Spike → DB + VM extract → Session lifecycle → WebSocket relay → Chat UI → ACP runtime
 ```
 
 ## Testing Strategy

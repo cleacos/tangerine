@@ -88,7 +88,6 @@ import { AssistantMessageGroups } from "../components/AssistantMessageGroups"
 import { NewAgentForm } from "../components/NewAgentForm"
 import { ChatInput, appendQuotedText } from "../components/ChatInput"
 import { ChatPanel } from "../components/ChatPanel"
-import { ModelSelector } from "../components/ModelSelector"
 import { ModelEffortPopover } from "../components/ModelEffortPopover"
 import { CommandPalette } from "../components/CommandPalette"
 import { StatusPage } from "../pages/StatusPage"
@@ -128,7 +127,7 @@ function makeTask(overrides?: Partial<Task>): Task {
     title: "Test task",
     description: null,
     status: "running",
-    provider: "opencode",
+    provider: "acp",
     model: null,
     reasoningEffort: null,
     branch: null,
@@ -179,13 +178,16 @@ function mockProjectsFetch() {
         repo: "test/repo",
         defaultBranch: "main",
         setup: "echo ok",
-        defaultProvider: "claude-code",
+        defaultAgent: "acp",
       },
     ],
-    model: "anthropic/claude-sonnet-4-6",
-    modelsByProvider: {
-      "claude-code": ["anthropic/claude-sonnet-4-6", "anthropic/claude-haiku-4-20250414"],
-      opencode: ["openai/gpt-5.4", "openai/gpt-5-mini"],
+    model: "gpt-5",
+    agents: [{ id: "acp", name: "ACP Agent", command: "acp-agent" }],
+    defaultAgent: "acp",
+    systemCapabilities: {
+      git: { available: true },
+      gh: { available: true, authenticated: true },
+      providers: { acp: { available: true, cliCommand: "acp-agent" } },
     },
   }), {
     status: 200,
@@ -205,12 +207,16 @@ function mockStatusPageFetch() {
             repo: "test/repo",
             defaultBranch: "main",
             setup: "echo ok",
-            defaultProvider: "claude-code",
+            defaultAgent: "acp",
           },
         ],
-        model: "anthropic/claude-sonnet-4-6",
-        modelsByProvider: {
-          "claude-code": ["anthropic/claude-sonnet-4-6"],
+        model: "gpt-5",
+        agents: [{ id: "acp", name: "ACP Agent", command: "acp-agent" }],
+        defaultAgent: "acp",
+        systemCapabilities: {
+          git: { available: true },
+          gh: { available: true, authenticated: true },
+          providers: { acp: { available: true, cliCommand: "acp-agent" } },
         },
       }), {
         status: 200,
@@ -329,21 +335,17 @@ describe("NewAgentForm", () => {
 
     await screen.findByText("What should the agent work on?")
 
-    // HarnessSelector renders a shadcn Select (role="combobox")
-    await screen.findAllByText("Claude Code")
+    // HarnessSelector renders configured ACP agents, not hardcoded legacy providers.
+    await screen.findAllByText("ACP Agent")
     const comboboxes = screen.getAllByRole("combobox")
-    const harnessCombobox = comboboxes.find((el) => el.textContent?.includes("Claude Code"))
+    const harnessCombobox = comboboxes.find((el) => el.textContent?.includes("ACP Agent"))
     expect(harnessCombobox).toBeTruthy()
     const controlsRow = harnessCombobox!.parentElement?.parentElement
     expect(controlsRow?.className.includes("overflow-visible")).toBe(true)
 
-    // ModelSelector is a shadcn Select (role="combobox")
-    const modelCombobox = comboboxes.find((el) => el.textContent?.includes("claude-sonnet-4-6"))
-    expect(modelCombobox).toBeTruthy()
-
-    // ReasoningEffortSelector is a shadcn Select (role="combobox")
-    const effortCombobox = comboboxes.find((el) => el.textContent?.includes("Medium"))
-    expect(effortCombobox).toBeTruthy()
+    expect(screen.queryByText("Claude Code")).toBeNull()
+    expect(screen.queryByText("OpenCode")).toBeNull()
+    expect(screen.queryByText("Medium")).toBeNull()
   })
 
   test("restores new agent draft text, branch, and images from localStorage", async () => {
@@ -396,23 +398,6 @@ describe("NewAgentForm", () => {
     expect(workerBtn.className).not.toContain("shadow-sm")
   })
 
-  test("renders model selector as a Select combobox", () => {
-    render(
-      <ModelSelector
-        model="anthropic/claude-sonnet-4-6"
-        models={[
-          "anthropic/claude-sonnet-4-6",
-          "anthropic/claude-haiku-4-20250414",
-          "openai/gpt-5.4",
-        ]}
-        onModelChange={() => {}}
-      />,
-    )
-
-    const combobox = screen.getByRole("combobox")
-    expect(combobox).toBeTruthy()
-    expect(combobox.textContent).toContain("claude-sonnet-4-6")
-  })
 })
 
 describe("ModelEffortPopover", () => {
@@ -489,12 +474,96 @@ describe("ModelEffortPopover", () => {
         onModelChange={() => {}}
         reasoningEffort="medium"
         onReasoningEffortChange={onEffort}
+        efforts={[
+          { value: "low", label: "Low", description: "Light reasoning" },
+          { value: "medium", label: "Medium", description: "Balanced reasoning" },
+          { value: "high", label: "High", description: "Deep reasoning" },
+        ]}
       />
     )
     const highBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("High"))
     expect(highBtn).toBeTruthy()
+    expect(screen.queryByText("Light reasoning")).toBeNull()
+    expect(screen.queryByText("Balanced reasoning")).toBeNull()
+    expect(screen.queryByText("Deep reasoning")).toBeNull()
     fireEvent.click(highBtn!)
     expect(onEffort).toHaveBeenCalledWith("high")
+  })
+
+  test("renders ACP-provided effort options", () => {
+    const onEffort = mock(() => {})
+    render(
+      <ModelEffortPopover
+        model="gpt-5"
+        models={["gpt-5"]}
+        onModelChange={() => {}}
+        reasoningEffort="deep"
+        onReasoningEffortChange={onEffort}
+        efforts={[{ value: "deep", label: "Think Hard", description: "Use more reasoning" }]}
+      />
+    )
+    const deepBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("Think Hard"))
+    expect(deepBtn).toBeTruthy()
+    fireEvent.click(deepBtn!)
+    expect(onEffort).toHaveBeenCalledWith("deep")
+  })
+
+  test("renders ACP-provided mode options", () => {
+    const onMode = mock(() => {})
+    render(
+      <ModelEffortPopover
+        model="gpt-5"
+        models={["gpt-5"]}
+        onModelChange={() => {}}
+        mode="ask"
+        modes={[{ value: "ask", label: "Ask", description: "Ask before writes" }, { value: "code", label: "Code", description: "Edit files" }]}
+        onModeChange={onMode}
+      />
+    )
+    const codeBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("Code"))
+    expect(codeBtn).toBeTruthy()
+    expect(screen.queryByText("Ask before writes")).toBeNull()
+    expect(screen.queryByText("Edit files")).toBeNull()
+    fireEvent.click(codeBtn!)
+    expect(onMode).toHaveBeenCalledWith("code")
+  })
+
+  test("shows ACP harness support summary", () => {
+    const { container } = render(
+      <ModelEffortPopover
+        model="claude-opus-4-5-20251101"
+        models={["claude-opus-4-5-20251101"]}
+        onModelChange={() => {}}
+        mode="default"
+        modes={[{ value: "default", label: "Default", description: "Ask before writes" }]}
+        onModeChange={() => {}}
+        harnessSupport={{ model: true, effort: false, mode: true }}
+      />
+    )
+
+    expect(screen.getByText("Harness supports")).toBeTruthy()
+    expect(screen.getAllByText("Model").length).toBeGreaterThan(0)
+    expect(screen.getByText("No Effort")).toBeTruthy()
+    expect(screen.getAllByText("Mode").length).toBeGreaterThan(0)
+    expect(container.querySelector("[data-slot='popover-content']")?.className).not.toContain("gap-2.5")
+  })
+
+  test("keeps model effort and mode columns in one row on mobile", () => {
+    const { container } = render(
+      <ModelEffortPopover
+        model="claude-opus-4-5-20251101"
+        models={["claude-opus-4-5-20251101", "sonnet"]}
+        onModelChange={() => {}}
+        reasoningEffort="medium"
+        efforts={[{ value: "low", label: "Low", description: "" }, { value: "medium", label: "Medium", description: "" }]}
+        onReasoningEffortChange={() => {}}
+        mode="default"
+        modes={[{ value: "default", label: "Default", description: "" }, { value: "plan", label: "Plan", description: "" }]}
+        onModeChange={() => {}}
+      />
+    )
+
+    expect(container.querySelector("[data-testid='model-effort-columns']")?.className).toContain("flex-nowrap")
   })
 
   test("effort column hidden when onReasoningEffortChange not provided", () => {
@@ -584,6 +653,101 @@ describe("ChatInput", () => {
 
   // Duplicate ChatInput instances no longer occur — TaskDetail renders a single
   // ChatPanel for both mobile and desktop via responsive CSS classes.
+
+  test("uses ACP config options for model and effort controls", () => {
+    render(
+      <ChatInput
+        onSend={() => {}}
+        disabled={false}
+        queueLength={0}
+        onModelChange={() => {}}
+        onReasoningEffortChange={() => {}}
+        onModeChange={() => {}}
+        configOptions={[
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-5",
+            options: [{ value: "gpt-5", name: "GPT-5" }, { value: "gpt-5-large", name: "GPT-5 Large" }],
+          },
+          {
+            id: "thinking",
+            name: "Thinking",
+            category: "thought_level",
+            type: "select",
+            currentValue: "deep",
+            options: [{ value: "deep", name: "Think Hard" }],
+          },
+          {
+            id: "mode",
+            name: "Mode",
+            category: "mode",
+            type: "select",
+            currentValue: "ask",
+            options: [{ value: "ask", name: "Ask" }, { value: "code", name: "Code" }],
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getAllByRole("button").some((button) => button.textContent?.includes("gpt-5"))).toBe(true)
+    expect(screen.getByText("Think Hard")).toBeTruthy()
+    expect(screen.getByText("Code")).toBeTruthy()
+  })
+
+  test("uses ACP effort category for reasoning controls", () => {
+    render(
+      <ChatInput
+        onSend={() => {}}
+        disabled={false}
+        queueLength={0}
+        onReasoningEffortChange={() => {}}
+        configOptions={[
+          {
+            id: "effort",
+            name: "Effort",
+            category: "effort",
+            type: "select",
+            currentValue: "medium",
+            options: [{ value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" }],
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByText("Medium")).toBeTruthy()
+    expect(screen.getByText("High")).toBeTruthy()
+    expect(screen.getByText("No Model")).toBeTruthy()
+    expect(screen.getByText("No Mode")).toBeTruthy()
+  })
+
+  test("hides missing ACP option categories instead of showing legacy defaults", () => {
+    render(
+      <ChatInput
+        onSend={() => {}}
+        disabled={false}
+        queueLength={0}
+        onReasoningEffortChange={() => {}}
+        configOptions={[
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-5",
+            options: [{ value: "gpt-5", name: "GPT-5" }],
+          },
+        ]}
+      />
+    )
+
+    expect(screen.queryByText("High")).toBeNull()
+    expect(screen.getByText("Harness supports")).toBeTruthy()
+    expect(screen.getByText("No Effort")).toBeTruthy()
+    expect(screen.getByText("No Mode")).toBeTruthy()
+  })
 
   test("shows quote chip when quotedMessage is provided", () => {
     render(
@@ -944,11 +1108,12 @@ describe("ProjectProvider", () => {
       if (url === "/api/projects") {
         return new Response(JSON.stringify({
           projects: [
-            { name: "proj-a", repo: "org/a", defaultBranch: "main", setup: "echo ok", defaultProvider: "claude-code" },
-            { name: "proj-b", repo: "org/b", defaultBranch: "main", setup: "echo ok", defaultProvider: "claude-code" },
+            { name: "proj-a", repo: "org/a", defaultBranch: "main", setup: "echo ok", defaultAgent: "acp" },
+            { name: "proj-b", repo: "org/b", defaultBranch: "main", setup: "echo ok", defaultAgent: "acp" },
           ],
-          model: "anthropic/claude-sonnet-4-6",
-          modelsByProvider: { "claude-code": ["anthropic/claude-sonnet-4-6"] },
+          model: "gpt-5",
+          agents: [{ id: "acp", name: "ACP Agent", command: "acp-agent" }],
+          defaultAgent: "acp",
         }), { status: 200, headers: { "Content-Type": "application/json" } })
       }
 
@@ -991,6 +1156,89 @@ describe("ChatMessage", async () => {
   function renderChat(props: Parameters<typeof ChatMessage>[0]) {
     return render(<MemoryRouter><ChatMessage {...props} /></MemoryRouter>)
   }
+
+  test("renders ACP content block cards", () => {
+    renderChat({
+      message: {
+        id: "content-1",
+        role: "content",
+        content: JSON.stringify({ type: "resource_link", uri: "file:///tmp/a.ts", name: "a.ts", mimeType: "text/typescript" }),
+        timestamp: "2026-03-17T10:00:00Z",
+        contentBlock: { type: "resource_link", uri: "file:///tmp/a.ts", name: "a.ts", mimeType: "text/typescript" },
+      },
+    })
+
+    expect(screen.getByText("Resource link")).toBeTruthy()
+    expect(screen.getByText("a.ts")).toBeTruthy()
+    expect(screen.getByText("file:///tmp/a.ts")).toBeTruthy()
+  })
+
+  test("hides ACP text content block placeholders", () => {
+    const { container } = renderChat({
+      message: {
+        id: "content-text",
+        role: "content",
+        content: JSON.stringify({ type: "text", text: "" }),
+        timestamp: "2026-03-17T10:00:00Z",
+        contentBlock: { type: "text", text: "" },
+      },
+    })
+
+    expect(container.textContent).toBe("")
+  })
+
+  test("renders ACP diff content block cards", () => {
+    renderChat({
+      message: {
+        id: "diff-1",
+        role: "content",
+        content: "",
+        timestamp: "2026-03-17T10:00:00Z",
+        contentBlock: { type: "diff", path: "/repo/src/a.ts", oldText: "const a = 1", newText: "const a = 2\nconst b = 3" },
+      },
+    })
+
+    expect(screen.getByText("Diff")).toBeTruthy()
+    expect(screen.getByText("/repo/src/a.ts")).toBeTruthy()
+    expect(screen.getByText("+2")).toBeTruthy()
+    expect(screen.getByText("-1")).toBeTruthy()
+    expect(screen.getByText("const b = 3")).toBeTruthy()
+  })
+
+  test("renders ACP terminal content block cards", () => {
+    renderChat({
+      message: {
+        id: "terminal-1",
+        role: "content",
+        content: "",
+        timestamp: "2026-03-17T10:00:00Z",
+        contentBlock: { type: "terminal", terminalId: "term-xyz" },
+      },
+    })
+
+    expect(screen.getByText("Terminal")).toBeTruthy()
+    expect(screen.getByText("term-xyz")).toBeTruthy()
+    expect(screen.getByText("Live terminal output is available in the terminal pane when attached.")).toBeTruthy()
+  })
+
+  test("renders ACP plan cards", () => {
+    renderChat({
+      message: {
+        id: "plan-1",
+        role: "plan",
+        content: "",
+        timestamp: "2026-03-17T10:00:00Z",
+        planEntries: [
+          { content: "Inspect files", status: "in_progress", priority: "high" },
+          { content: "Patch bug", status: "pending", priority: "medium" },
+        ],
+      },
+    })
+
+    expect(screen.getByText("Plan")).toBeTruthy()
+    expect(screen.getByText("Inspect files")).toBeTruthy()
+    expect(screen.getByText("in_progress")).toBeTruthy()
+  })
 
   test("renders markdown tables as HTML tables", () => {
     const tableContent = "| Feature | Status |\n|---|---|\n| Tables | Yes |\n| Bold | Yes |"

@@ -7,9 +7,10 @@ The `tangerine` CLI is implemented under `packages/server/src/cli/`.
 | Command | Description |
 |---------|-------------|
 | `tangerine start` | Start the Tangerine server |
-| `tangerine install` | Create local directories and install skills for all providers |
+| `tangerine install` | Create local directories and install Tangerine skills into the ACP skills dir |
 | `tangerine project ...` | Manage registered projects |
 | `tangerine task ...` | Create manual tasks |
+| `tangerine acp probe` | Probe configured ACP adapter capabilities/config/events |
 | `tangerine secret ...` | Manage secrets stored in `.credentials` |
 
 ## `tangerine start`
@@ -30,14 +31,45 @@ If the server binds a non-loopback host (for example `0.0.0.0`) and `TANGERINE_A
 Current behavior:
 
 - ensures `~/tangerine` exists
-- symlinks repo skills into each provider's configured skill directory
-- checks whether usable LLM credentials are present
+- symlinks repo skills into the provider-neutral ACP skills directory (`~/.config/acp/skills`)
+- does not install ACP agent adapters or manage LLM credentials
+
+Configured ACP agent examples:
+
+| Agent | No-global-install command | Global command |
+|-------|---------------------------|----------------|
+| Claude Agent | `bunx --bun @agentclientprotocol/claude-agent-acp` | `claude-agent-acp` |
+| Codex | `bunx --bun @zed-industries/codex-acp` | `codex-acp` |
+| OpenCode | `bunx --bun opencode-ai acp` | `opencode acp` |
+| Pi | `bunx --bun pi-acp` | `pi-acp` |
 
 Installed skills:
 
 - `platform-setup`
 - `tangerine-tasks`
 - `browser-test`
+
+## `tangerine acp probe`
+
+Inspects configured external ACP agents without adding provider-specific runtime code.
+
+Default behavior runs `initialize` and `session/new` for each configured agent, then prints a capability/config matrix. `--prompt` additionally runs `session/prompt` and summarizes stream events.
+
+Supported flags:
+
+- `--agent, -a <id>`: probe one configured agent
+- `--cwd <path>`: session working directory (default: current directory)
+- `--prompt, -p <text>`: run one prompt and summarize streaming updates
+- `--timeout, -t <ms>`: per-agent timeout, default `5000`
+- `--json`: print raw JSON result
+
+Examples:
+
+```bash
+tangerine acp probe
+tangerine acp probe --agent claude --json
+tangerine acp probe --agent pi --prompt "Say hi" --json
+```
 
 ## `tangerine project`
 
@@ -73,7 +105,7 @@ It inserts a manual task row directly into the DB.
 
 ## `tangerine secret`
 
-Manages secrets stored in `~/tangerine/.credentials` (mode 0600). Use this for API keys, auth tokens, and other sensitive values.
+Manages Tangerine secrets stored in `~/tangerine/.credentials` (mode 0600). ACP agent LLM credentials are managed by each agent's own CLI/config.
 
 Subcommands:
 
@@ -84,8 +116,6 @@ Subcommands:
 
 Allowed keys currently come from `ALLOWED_CREDENTIAL_KEYS`:
 
-- `ANTHROPIC_API_KEY`
-- `CLAUDE_CODE_OAUTH_TOKEN`
 - `TANGERINE_AUTH_TOKEN`
 - `EXTERNAL_HOST`
 
@@ -95,8 +125,7 @@ Examples:
 
 ```bash
 tangerine secret set TANGERINE_AUTH_TOKEN=$(openssl rand -hex 32)
-tangerine secret set ANTHROPIC_API_KEY=sk-ant-...
-tangerine secret get ANTHROPIC_API_KEY
+tangerine secret get TANGERINE_AUTH_TOKEN
 tangerine secret list
-tangerine secret delete ANTHROPIC_API_KEY
+tangerine secret delete TANGERINE_AUTH_TOKEN
 ```

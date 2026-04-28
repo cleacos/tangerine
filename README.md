@@ -6,7 +6,7 @@ Local background coding agent platform. Tangerine runs as a local Bun server, sp
 
 - Single-machine runtime, use it on your host machine or inside a VM.
 - Shared bearer-token auth for dashboard, API, and task/terminal WebSockets when `TANGERINE_AUTH_TOKEN` is set
-- Multi-provider agents: Pi, OpenCode, Claude Code, and Codex
+- ACP-only agents: configured external ACP commands (for example Claude Agent, Codex, OpenCode, or Pi adapters)
 - Git worktrees per task under a shared workspace
 - Hono API server with REST + WebSocket endpoints
 - Vite + React dashboard served from `web/dist`
@@ -20,7 +20,7 @@ See [specs/architecture.md](specs/architecture.md) for the source-of-truth archi
 packages/
   shared/src/      # shared types, config schema, constants
   server/src/
-    agent/         # provider adapters: OpenCode, Claude Code, Codex
+    agent/         # ACP stdio client/runtime
     api/           # Hono routes + WebSocket handlers
     cli/           # tangerine CLI
     db/            # SQLite schema + queries
@@ -59,7 +59,28 @@ Install the skills:
 tangerine install
 ```
 
-Ask your clanker to set up Tangerine and add projects using the `platform-setup` skill (`/platform-setup`).
+Configure at least one ACP agent command in `~/tangerine/config.json`. Common no-global-install examples:
+
+```json
+{
+  "agents": [
+    { "id": "claude", "name": "Claude Agent", "command": "bunx", "args": ["--bun", "@agentclientprotocol/claude-agent-acp"] },
+    { "id": "codex", "name": "Codex", "command": "bunx", "args": ["--bun", "@zed-industries/codex-acp"] },
+    { "id": "opencode", "name": "OpenCode", "command": "bunx", "args": ["--bun", "opencode-ai", "acp"] },
+    { "id": "pi", "name": "Pi", "command": "bunx", "args": ["--bun", "pi-acp"] }
+  ],
+  "defaultAgent": "claude"
+}
+```
+
+Authenticate the underlying agent CLI/config outside Tangerine. Probe configured adapters before starting tasks:
+
+```bash
+tangerine acp probe
+tangerine acp probe --agent claude --json
+```
+
+Then ask your clanker to set up Tangerine and add projects using the `platform-setup` skill (`/platform-setup`).
 
 Then start:
 ```bash

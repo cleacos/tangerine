@@ -1,13 +1,23 @@
 import { useState } from "react"
 import { Check, ChevronDown } from "lucide-react"
-import type { ProviderType } from "@tangerine/shared"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import { useProject } from "../context/ProjectContext"
 import { formatModelName } from "../lib/format"
-import { getEfforts } from "./ReasoningEffortSelector"
+
+export interface EffortOption {
+  value: string
+  label: string
+  description: string
+}
+
+export interface HarnessSupport {
+  model: boolean
+  effort: boolean
+  mode: boolean
+}
 
 interface ModelEffortPopoverProps {
   models: string[]
@@ -15,9 +25,15 @@ interface ModelEffortPopoverProps {
   onModelChange: (model: string) => void
   reasoningEffort?: string | null
   onReasoningEffortChange?: (effort: string) => void
-  provider?: ProviderType
+  provider?: string
+  efforts?: EffortOption[]
+  mode?: string | null
+  modes?: EffortOption[]
+  onModeChange?: (mode: string) => void
   /** Whether the model list is interactive (vs read-only display) */
   canChangeModel?: boolean
+  /** ACP selectors advertised by the harness for this session. */
+  harnessSupport?: HarnessSupport
 }
 
 export function ModelEffortPopover({
@@ -26,25 +42,33 @@ export function ModelEffortPopover({
   onModelChange,
   reasoningEffort,
   onReasoningEffortChange,
-  provider,
+  efforts: propEfforts,
+  mode,
+  modes,
+  onModeChange,
   canChangeModel = true,
+  harnessSupport,
 }: ModelEffortPopoverProps) {
   const [open, setOpen] = useState(false)
-  const { providerMetadata } = useProject()
 
   // Don't render if there's nothing to show
   const resolvedModel = model || models[0] || ""
-  if (!resolvedModel && !onReasoningEffortChange) return null
+  const efforts = propEfforts ?? []
+  const showEffort = !!onReasoningEffortChange && efforts.length > 0
+  const showMode = !!onModeChange && !!modes?.length
+  if (!resolvedModel && !showEffort && !showMode) return null
 
-  const effortsByProvider: Record<string, { value: string; label: string; description: string }[]> = {}
-  for (const [key, meta] of Object.entries(providerMetadata)) {
-    effortsByProvider[key] = meta.reasoningEfforts
-  }
-  const efforts = getEfforts(provider, effortsByProvider)
   // Normalize to an effective value so trigger and highlight stay in sync
-  const effectiveEffort = (efforts.find((e) => e.value === reasoningEffort) ?? efforts.find((e) => e.value === "medium") ?? efforts[0])?.value
+  const effectiveEffort = (efforts.find((e) => e.value === reasoningEffort) ?? efforts[0])?.value
 
-  const showEffort = !!onReasoningEffortChange
+  const effectiveMode = modes?.find((entry) => entry.value === mode)?.value ?? modes?.[0]?.value
+  const harnessSupportItems = harnessSupport
+    ? [
+      { label: "Model", supported: harnessSupport.model },
+      { label: "Effort", supported: harnessSupport.effort },
+      { label: "Mode", supported: harnessSupport.mode },
+    ]
+    : []
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -64,12 +88,28 @@ export function ModelEffortPopover({
         side="top"
         align="start"
         sideOffset={6}
-        className="w-lg max-w-[calc(100vw-16px)] overflow-hidden p-0"
+        className="w-lg max-w-[calc(100vw-16px)] gap-0 overflow-hidden p-0"
       >
-        <div className="flex flex-wrap">
+        {harnessSupport && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
+            <span className="mr-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+              Harness supports
+            </span>
+            {harnessSupportItems.map((item) => (
+              <Badge
+                key={item.label}
+                variant={item.supported ? "secondary" : "outline"}
+                className={cn("h-5 text-2xs", !item.supported && "text-muted-foreground")}
+              >
+                {item.supported ? item.label : `No ${item.label}`}
+              </Badge>
+            ))}
+          </div>
+        )}
+        <div data-testid="model-effort-columns" className="flex flex-nowrap">
           {/* Model column */}
           {resolvedModel && (
-            <div className="flex min-w-35 flex-1 flex-col">
+            <div className="flex min-w-0 flex-1 flex-col">
               <div className="border-b border-border px-3 py-2 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
                 Model
               </div>
@@ -94,7 +134,7 @@ export function ModelEffortPopover({
                     <Check
                       className={cn("size-3 shrink-0", m !== resolvedModel && "invisible")}
                     />
-                    {formatModelName(m)}
+                    <span className="min-w-0 truncate">{formatModelName(m)}</span>
                   </Button>
                 ))}
               </div>
@@ -105,7 +145,7 @@ export function ModelEffortPopover({
           {showEffort && (
             <>
               {resolvedModel && <Separator orientation="vertical" />}
-              <div className="flex min-w-35 flex-1 flex-col">
+              <div className="flex min-w-0 flex-1 flex-col">
                 <div className="border-b border-border px-3 py-2 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
                   Effort
                 </div>
@@ -120,20 +160,48 @@ export function ModelEffortPopover({
                         setOpen(false)
                       }}
                       className={cn(
-                        "h-auto w-full justify-start items-start gap-1.5 px-2 py-1.5",
-                        e.value === effectiveEffort && "bg-accent/60"
+                        "h-auto w-full justify-start gap-1.5 px-2 py-1.5 text-xs",
+                        e.value === effectiveEffort && "bg-accent/60 font-medium"
                       )}
                     >
                       <Check
-                        className={cn(
-                          "mt-0.5 size-3 shrink-0",
-                          e.value !== effectiveEffort && "invisible"
-                        )}
+                        className={cn("size-3 shrink-0", e.value !== effectiveEffort && "invisible")}
                       />
-                      <span className="flex flex-col items-start gap-0">
-                        <span className="text-xs font-medium">{e.label}</span>
-                        <span className="text-2xs text-muted-foreground">{e.description}</span>
-                      </span>
+                      <span className="min-w-0 truncate">{e.label}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Mode column */}
+          {showMode && (
+            <>
+              {(resolvedModel || showEffort) && <Separator orientation="vertical" />}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="border-b border-border px-3 py-2 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Mode
+                </div>
+                <div className="p-1">
+                  {modes!.map((entry) => (
+                    <Button
+                      key={entry.value}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        onModeChange!(entry.value)
+                        setOpen(false)
+                      }}
+                      className={cn(
+                        "h-auto w-full justify-start gap-1.5 px-2 py-1.5 text-xs",
+                        entry.value === effectiveMode && "bg-accent/60 font-medium"
+                      )}
+                    >
+                      <Check
+                        className={cn("size-3 shrink-0", entry.value !== effectiveMode && "invisible")}
+                      />
+                      <span className="min-w-0 truncate">{entry.label}</span>
                     </Button>
                   ))}
                 </div>
