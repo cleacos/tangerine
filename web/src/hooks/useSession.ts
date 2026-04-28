@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import type { AgentConfigOption, AgentContentBlock, AgentPlanEntry, AgentSlashCommand, WsServerMessage, TaskStatus, ActivityEntry, PromptImage, PromptQueueEntry } from "@tangerine/shared"
-import { fetchMessages, fetchActivities, fetchQueuedPrompts, fetchTaskConfigOptions, fetchTaskSlashCommands, removeQueuedPrompt, updateQueuedPrompt, type SessionLog } from "../lib/api"
+import { fetchMessagesPaginated, fetchActivities, fetchQueuedPrompts, fetchTaskConfigOptions, fetchTaskSlashCommands, removeQueuedPrompt, updateQueuedPrompt, type SessionLog } from "../lib/api"
 import { useWebSocket } from "./useWebSocket"
 
 export interface ChatMessageImage {
@@ -253,6 +253,7 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
     setSlashCommands([])
     processedCountRef.current = 0
     activeAssistantStreamIdRef.current = null
+    backfillInProgressRef.current = false
     for (const pending of pendingOptimisticRef.current.values()) clearPendingOptimistic(pending)
     pendingOptimisticRef.current.clear()
     setQueueVisibilityNow(Date.now())
@@ -307,75 +308,126 @@ export function useSession(taskId: string, initialContextTokens?: number, initia
     setQueueVisibilityNow(now)
   }
 
+  const INITIAL_MESSAGE_LIMIT = 100
+
+  function logToMessage(log: SessionLog, taskIdForImages: string): ChatMessage {
+    const msg: ChatMessage = {
+      id: String(log.id),
+      role: log.role,
+      content: log.content,
+      timestamp: log.timestamp,
+    }
+    if (log.role === "plan") {
+      try {
+        msg.planEntries = JSON.parse(log.content) as AgentPlanEntry[]
+      } catch { /* ignore malformed */ }
+    }
+    if (log.role === "content") {
+      try {
+        msg.contentBlock = JSON.parse(log.content) as AgentContentBlock
+      } catch { /* ignore malformed */ }
+    }
+    if (log.images) {
+      try {
+        const filenames = JSON.parse(log.images) as string[]
+        msg.images = filenames.map((f) => ({ src: `/api/tasks/${taskIdForImages}/images/${f}` }))
+      } catch { /* ignore malformed */ }
+    }
+    return msg
+  }
+
+  // Track if backfill is in progress to prevent duplicate concurrent backfills
+  const backfillInProgressRef = useRef(false)
+
+  // Load remaining messages in background after initial load
+  async function loadRemainingMessages(
+    targetTaskId: string,
+    beforeId: number,
+    isCurrentTask: () => boolean
+  ) {
+    if (backfillInProgressRef.current) return
+    backfillInProgressRef.current = true
+    try {
+      let cursor = beforeId
+      while (true) {
+        if (!isCurrentTask()) return
+        try {
+          const result = await fetchMessagesPaginated(targetTaskId, INITIAL_MESSAGE_LIMIT, cursor)
+          if (!isCurrentTask()) return
+          if (result.messages.length === 0) break
+          const olderMessages = result.messages.map((log) => logToMessage(log, targetTaskId))
+          // Dedupe: filter out messages already in state
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id))
+            const newMessages = olderMessages.filter((m) => !existingIds.has(m.id))
+            return newMessages.length > 0 ? [...newMessages, ...prev] : prev
+          })
+          if (!result.hasMore) break
+          const firstOlder = olderMessages[0]
+          if (!firstOlder) break
+          cursor = parseInt(firstOlder.id, 10)
+          if (isNaN(cursor)) break
+        } catch {
+          break
+        }
+      }
+    } finally {
+      backfillInProgressRef.current = false
+    }
+  }
+
   // Load initial messages + activities via REST
+  // Messages fetch runs first and applies immediately for fast initial render
+  // Side fetches run in parallel and apply when done
   const refreshFromRest = useCallback(async () => {
     const refreshTaskId = taskId
     const isCurrentTask = () => activeTaskIdRef.current === refreshTaskId
+    const messagesRequestedAtMs = Date.now()
 
-    try {
-      const messagesRequestedAtMs = Date.now()
-      const logs = await fetchMessages(refreshTaskId)
-      if (!isCurrentTask()) return
-      const snapshot = logs.map((log: SessionLog) => {
-        const msg: ChatMessage = {
-          id: String(log.id),
-          role: log.role,
-          content: log.content,
-          timestamp: log.timestamp,
-        }
-        if (log.role === "plan") {
-          try {
-            msg.planEntries = JSON.parse(log.content) as AgentPlanEntry[]
-          } catch { /* ignore malformed */ }
-        }
-        if (log.role === "content") {
-          try {
-            msg.contentBlock = JSON.parse(log.content) as AgentContentBlock
-          } catch { /* ignore malformed */ }
-        }
-        if (log.images) {
-          try {
-            const filenames = JSON.parse(log.images) as string[]
-            msg.images = filenames.map((f) => ({ src: `/api/tasks/${refreshTaskId}/images/${f}` }))
-          } catch { /* ignore malformed */ }
-        }
-        return msg
-      })
+    // Fetch messages first for fast initial render
+    const messagesPromise = fetchMessagesPaginated(refreshTaskId, INITIAL_MESSAGE_LIMIT).catch(() => null)
+
+    // Fire side fetches in parallel (don't block messages)
+    const sidePromises = Promise.all([
+      fetchActivities(refreshTaskId).catch(() => null),
+      fetchTaskConfigOptions(refreshTaskId).catch(() => null),
+      fetchTaskSlashCommands(refreshTaskId).catch(() => null),
+      fetchQueuedPrompts(refreshTaskId).catch(() => null),
+    ])
+
+    // Apply messages as soon as they arrive
+    const messagesResult = await messagesPromise
+    if (!isCurrentTask()) return
+
+    if (messagesResult) {
+      const snapshot = messagesResult.messages.map((log) => logToMessage(log, refreshTaskId))
       setMessages((prev) => mergeMessageSnapshot(prev, snapshot, messagesRequestedAtMs))
-    } catch {
-      // Messages may not be available yet
+
+      // If there are older messages, load them in background
+      const firstSnapshot = snapshot[0]
+      if (messagesResult.hasMore && firstSnapshot) {
+        const oldestId = parseInt(firstSnapshot.id, 10)
+        if (!isNaN(oldestId)) {
+          loadRemainingMessages(refreshTaskId, oldestId, isCurrentTask)
+        }
+      }
     }
+
+    // Apply side data when ready (non-blocking)
+    const [activitiesResult, optionsResult, commandsResult, queuedResult] = await sidePromises
     if (!isCurrentTask()) return
-    try {
-      const data = await fetchActivities(refreshTaskId)
-      if (!isCurrentTask()) return
-      setActivities((prev) => mergeActivitySnapshot(prev, data))
-    } catch {
-      // Activities may not be available yet
+
+    if (activitiesResult) {
+      setActivities((prev) => mergeActivitySnapshot(prev, activitiesResult))
     }
-    if (!isCurrentTask()) return
-    try {
-      const options = await fetchTaskConfigOptions(refreshTaskId)
-      if (!isCurrentTask()) return
-      setConfigOptions(options)
-    } catch {
-      // Session config may not be available yet
+    if (optionsResult) {
+      setConfigOptions(optionsResult)
     }
-    if (!isCurrentTask()) return
-    try {
-      const commands = await fetchTaskSlashCommands(refreshTaskId)
-      if (!isCurrentTask()) return
-      setSlashCommands(commands)
-    } catch {
-      // Slash commands may not be available yet
+    if (commandsResult) {
+      setSlashCommands(commandsResult)
     }
-    if (!isCurrentTask()) return
-    try {
-      const queued = await fetchQueuedPrompts(refreshTaskId)
-      if (!isCurrentTask()) return
-      applyQueuedPrompts(queued)
-    } catch {
-      // Queue may not be available yet
+    if (queuedResult) {
+      applyQueuedPrompts(queuedResult)
     }
   }, [taskId])
 
