@@ -14,6 +14,7 @@ import { buildSystemNotes } from "./prompts"
 import { killProcessTree } from "../agent/process-tree"
 import { getAgentHandleMeta } from "../agent/provider"
 import { resolveGithubSlug, getRepoForkInfo } from "../gh"
+import { cleanGitEnv } from "../git-env"
 import { emitTaskEvent } from "./events"
 import { getTaskState } from "./task-state"
 
@@ -80,7 +81,7 @@ function localExec(command: string, cwd?: string): Effect.Effect<{ stdout: strin
         cwd,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env },
+        env: cleanGitEnv(),
       })
       const [stdout, stderr, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),
@@ -207,24 +208,19 @@ export function startSession(
         // be destructively modified at startup.
         yield* activity("worktree.ready", "Task using slot 0", { worktreePath, branch, slot: slot.id })
       } else {
-        // Checkout the task branch on the acquired slot
-        // Reviewers use detached HEAD to avoid "branch already used by worktree" error
-        // when the worker has the branch checked out in another worktree.
-        const checkoutCmd = isReviewer
-          ? `cd ${worktreePath} && git fetch origin && if git rev-parse --verify origin/${branch} >/dev/null 2>&1; then
-              git checkout --detach origin/${branch}
-            else
-              git checkout --detach origin/${baseBranch}
-            fi`
-          : `cd ${worktreePath} && if git rev-parse --verify origin/${branch} >/dev/null 2>&1; then
-              git fetch origin && git checkout -B ${branch} origin/${branch}
-            else
-              git fetch origin && git checkout -B ${branch} origin/${baseBranch}
-            fi`
-        yield* localExec(checkoutCmd).pipe(
+        // Checkout the task branch on the acquired slot.
+        // Reviewers need a real branch for tools, but must not move the worker's branch ref.
+        const checkoutBranch = isReviewer ? `tangerine/reviewer/${taskPrefix}` : branch
+        yield* localExec(
+          `cd ${worktreePath} && if git rev-parse --verify origin/${branch} >/dev/null 2>&1; then
+            git fetch origin && git checkout -B ${checkoutBranch} origin/${branch}
+          else
+            git fetch origin && git checkout -B ${checkoutBranch} origin/${baseBranch}
+          fi`,
+        ).pipe(
           Effect.tap(() => activity("worktree.ready",
-            isReviewer ? `Detached HEAD at ${branch}` : (isExistingBranch ? `Checked out existing branch: ${branch}` : "Worktree ready"),
-            { worktreePath, branch, slot: slot.id, isExistingBranch, isReviewer })),
+            isExistingBranch ? `Checked out existing branch: ${branch}` : "Worktree ready",
+            { worktreePath, branch, checkoutBranch, slot: slot.id, isExistingBranch, isReviewer })),
           Effect.mapError((e) => new SessionStartError({
             message: `Branch checkout failed: ${e.message}`,
             taskId: task.id,
